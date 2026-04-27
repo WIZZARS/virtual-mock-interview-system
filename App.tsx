@@ -8,6 +8,33 @@ import { InterviewScreen } from './components/InterviewScreen';
 import { ReportScreen } from './components/ReportScreen';
 import { useVisionTracker } from './src/hooks/useVisionTracker';
 
+// ============================================================
+// HELPERS: Build a WAV blob from raw PCM (Int16, 24 kHz, mono)
+// ============================================================
+function pcmBase64ToWavBlob(base64Pcm: string, sampleRate = 24000, channels = 1, bitsPerSample = 16): Blob {
+  const pcmBytes = Uint8Array.from(atob(base64Pcm), c => c.charCodeAt(0));
+  const dataLen = pcmBytes.length;
+  const headerLen = 44;
+  const buf = new ArrayBuffer(headerLen + dataLen);
+  const view = new DataView(buf);
+  const write = (offset: number, val: string) => { for (let i = 0; i < val.length; i++) view.setUint8(offset + i, val.charCodeAt(i)); };
+  write(0, 'RIFF');
+  view.setUint32(4, 36 + dataLen, true);
+  write(8, 'WAVE');
+  write(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * channels * (bitsPerSample / 8), true);
+  view.setUint16(32, channels * (bitsPerSample / 8), true);
+  view.setUint16(34, bitsPerSample, true);
+  write(36, 'data');
+  view.setUint32(40, dataLen, true);
+  new Uint8Array(buf, headerLen).set(pcmBytes);
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
 export default function App() {
   const { track, difficulty, jobDescription, resumeText } = useInterviewStore();
   const { user } = useAuthStore();
@@ -22,6 +49,7 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState('Connecting to Gemini AI...');
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -43,12 +71,16 @@ export default function App() {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const silenceStartRef = useRef<number>(0);
 
-  // Pre-load TTS voices
+  // Gemini TTS audio element
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsObjectUrlRef = useRef<string | null>(null);
+
+  // Init Gemini TTS audio element once
   useEffect(() => {
-    const loadVoices = () => { window.speechSynthesis.getVoices(); };
-    loadVoices();
-    window.speechSynthesis.onvoiceschanged = loadVoices;
-    return () => { window.speechSynthesis.onvoiceschanged = null; };
+    ttsAudioRef.current = new Audio();
+    return () => {
+      if (ttsObjectUrlRef.current) URL.revokeObjectURL(ttsObjectUrlRef.current);
+    };
   }, []);
 
   // Vision tracking
@@ -94,8 +126,17 @@ export default function App() {
     // Stop video
     mediaStreamRef.current?.getTracks().forEach(t => t.stop());
     mediaStreamRef.current = null;
-    
-    window.speechSynthesis.cancel();
+
+    // Stop Gemini TTS playback
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause();
+      ttsAudioRef.current.src = '';
+    }
+    if (ttsObjectUrlRef.current) {
+      URL.revokeObjectURL(ttsObjectUrlRef.current);
+      ttsObjectUrlRef.current = null;
+    }
+
     setIsSpeaking(false);
     setIsRecording(false);
     setIsProcessing(false);
@@ -172,12 +213,17 @@ export default function App() {
   // ============================================================
   // AI RESPONSE GENERATION
   // ============================================================
+  const FALLBACK_OPENER = `Hi! I'm your AI interview coach for this ${track || 'technical'} session at ${difficulty || 'Fresher'} level. Great to meet you! To kick things off, could you tell me a little about yourself and your background?`;
+
   const generateNextAIResponse = async (userSpokenText: string) => {
      if (!isInterviewActive.current) return;
 
+     // Show a loading indicator while fetching
+     if (!userSpokenText) setLoadingMessage('Gemini AI is preparing your first question...');
+
      try {
        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-       if (!apiKey) throw new Error("VITE_GEMINI_API_KEY not set.");
+       if (!apiKey) throw new Error("VITE_GEMINI_API_KEY is not set in .env.local");
        
        const ai = new GoogleGenAI({ apiKey });
        
@@ -214,97 +260,138 @@ RULES:
 
        const prompt = `${systemInstruction}\n\nHistory:\n${conversationHistory.current || "(First message)"}\n\nYour response:`;
 
-       const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt
-       });
+       // Race the API call against a 20-second timeout
+       const responseText = await Promise.race([
+         ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt })
+           .then(r => (r.text || '').trim()),
+         new Promise<string>((_, reject) =>
+           setTimeout(() => reject(new Error('Gemini response timed out after 20s')), 20000)
+         )
+       ]);
 
-       const aiText = (response.text || "").trim();
-       if (!aiText || !isInterviewActive.current) return;
+       if (!responseText || !isInterviewActive.current) throw new Error('Empty response from Gemini');
        
-       conversationHistory.current += `\nInterviewer: ${aiText}`;
-       setTranscript(prev => [...prev, { speaker: 'ai', text: aiText }]);
-
-       speakThenRecord(aiText);
+       conversationHistory.current += `\nInterviewer: ${responseText}`;
+       setTranscript(prev => [...prev, { speaker: 'ai', text: responseText }]);
+       speakThenRecord(responseText);
 
      } catch(e: any) {
-       console.error("AI Error:", e);
-       if (isInterviewActive.current) {
-         setTimeout(() => {
-           if (isInterviewActive.current) {
-             speakThenRecord("Sorry about that pause. Could you repeat your answer?");
-           }
-         }, 2000);
+       console.error('❌ Gemini text generation error:', e?.message || e);
+       if (!isInterviewActive.current) return;
+
+       // If this is the very first question, use a hardcoded fallback instead of hanging
+       if (questionCount.current === 0 && conversationHistory.current === '') {
+         console.warn('Using fallback opener because Gemini text gen failed');
+         conversationHistory.current += `\nInterviewer: ${FALLBACK_OPENER}`;
+         setTranscript(prev => [...prev, { speaker: 'ai', text: FALLBACK_OPENER }]);
+         speakThenRecord(FALLBACK_OPENER);
+       } else {
+         // Mid-interview failure — prompt user to repeat
+         const retryMsg = "I had a brief connection issue. Could you repeat your last answer?";
+         conversationHistory.current += `\nInterviewer: ${retryMsg}`;
+         setTranscript(prev => [...prev, { speaker: 'ai', text: retryMsg }]);
+         speakThenRecord(retryMsg);
        }
      }
   };
 
   // ============================================================
-  // TEXT-TO-SPEECH → then auto-start recording
+  // SPEAK (Gemini TTS → Audio element, with Web Speech fallback)
+  // → then auto-start recording
   // ============================================================
-  const speakThenRecord = (textToSay: string) => {
-    if (!isInterviewActive.current) return;
 
-    if (textToSay.includes("Interview complete") || textToSay.includes("Generating your report")) {
-        setTranscript(prev => {
-          const last = prev[prev.length - 1];
-          if (last?.text !== textToSay) return [...prev, { speaker: 'ai', text: textToSay }];
-          return prev;
-        });
-        setInterviewState('generating_report');
-        return;
-    }
-
+  /** Browser Web Speech API fallback (always available) */
+  const speakWithBrowser = (text: string, onDone: () => void) => {
     window.speechSynthesis.cancel();
-    
-    const utterance = new SpeechSynthesisUtterance(textToSay);
-    
+    const utt = new SpeechSynthesisUtterance(text);
     const voices = window.speechSynthesis.getVoices();
-    const voice = voices.find(v => 
-      v.name.includes("Google US English") || 
-      v.name.includes("Google UK English Male") ||
-      v.name.includes("Microsoft David") ||
-      v.name.includes("Microsoft Mark") ||
-      v.name.includes("Samantha") ||
-      v.name.includes("Daniel")
+    const preferred = voices.find(v =>
+      v.name.includes('Google US English') ||
+      v.name.includes('Microsoft David') ||
+      v.name.includes('Microsoft Mark') ||
+      v.name.includes('Samantha') ||
+      v.name.includes('Daniel')
     ) || voices.find(v => v.lang.startsWith('en') && !v.localService)
       || voices.find(v => v.lang.startsWith('en'));
-    
-    if (voice) utterance.voice = voice;
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
+    if (preferred) utt.voice = preferred;
+    utt.rate = 1.0; utt.pitch = 1.0; utt.volume = 1.0;
+    // Chrome keepalive
+    const ka = setInterval(() => {
+      if (!window.speechSynthesis.speaking) { clearInterval(ka); return; }
+      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+    }, 3000);
+    utt.onend = () => { clearInterval(ka); onDone(); };
+    utt.onerror = () => { clearInterval(ka); onDone(); };
+    window.speechSynthesis.speak(utt);
+  };
 
-    // Chrome keepalive for long text
-    let keepAlive: ReturnType<typeof setInterval> | null = null;
-    if (textToSay.length > 100) {
-      keepAlive = setInterval(() => {
-        if (!window.speechSynthesis.speaking) { if (keepAlive) clearInterval(keepAlive); return; }
-        if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-      }, 3000);
+  const speakThenRecord = async (textToSay: string) => {
+    if (!isInterviewActive.current) return;
+
+    if (textToSay.includes('Interview complete') || textToSay.includes('Generating your report')) {
+      setTranscript(prev => {
+        const last = prev[prev.length - 1];
+        if (last?.text !== textToSay) return [...prev, { speaker: 'ai', text: textToSay }];
+        return prev;
+      });
+      setInterviewState('generating_report');
+      return;
     }
 
-    utterance.onstart = () => {
-      setIsSpeaking(true);
-      setIsRecording(false);
-      setIsProcessing(false);
-    };
+    setIsSpeaking(true);
+    setIsRecording(false);
+    setIsProcessing(false);
 
     const afterSpeech = () => {
-      if (keepAlive) clearInterval(keepAlive);
-      setIsSpeaking(false);
       if (!isInterviewActive.current) return;
-      
-      // After AI finishes speaking, auto-start recording
-      setTimeout(() => {
-        if (isInterviewActive.current) startRecording();
-      }, 600);
+      setIsSpeaking(false);
+      setTimeout(() => { if (isInterviewActive.current) startRecording(); }, 500);
     };
 
-    utterance.onend = afterSpeech;
-    utterance.onerror = (e) => { console.warn("TTS error:", e); afterSpeech(); };
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error('No API key');
+      const ai = new GoogleGenAI({ apiKey });
 
-    window.speechSynthesis.speak(utterance);
+      // Try Gemini TTS (with 15s timeout)
+      const ttsResponse = await Promise.race([
+        ai.models.generateContent({
+          model: 'gemini-2.5-flash-preview-tts',
+          contents: [{ parts: [{ text: textToSay }] }],
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } } }
+          }
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('TTS timeout')), 15000)
+        )
+      ]);
+
+      const part = ttsResponse.candidates?.[0]?.content?.parts?.[0];
+      const pcmBase64 = (part as any)?.inlineData?.data;
+
+      if (!pcmBase64) throw new Error('No PCM data in TTS response');
+      if (!isInterviewActive.current) return;
+
+      const wavBlob = pcmBase64ToWavBlob(pcmBase64);
+      if (ttsObjectUrlRef.current) URL.revokeObjectURL(ttsObjectUrlRef.current);
+      const url = URL.createObjectURL(wavBlob);
+      ttsObjectUrlRef.current = url;
+
+      const audio = ttsAudioRef.current!;
+      audio.src = url;
+      audio.onended = afterSpeech;
+      audio.onerror = () => { console.warn('Audio element error, using browser TTS'); speakWithBrowser(textToSay, afterSpeech); };
+      await audio.play();
+      console.log('🔊 Gemini TTS playing');
+
+    } catch (err) {
+      console.warn('Gemini TTS unavailable, falling back to browser TTS:', (err as any)?.message);
+      // Graceful fallback to browser Speech Synthesis
+      setIsSpeaking(true);
+      speakWithBrowser(textToSay, afterSpeech);
+    }
   };
 
   // ============================================================
@@ -648,6 +735,7 @@ Transcript:\n${transcriptText}`;
                   </div>
                   <h2 className="text-2xl font-bold text-foreground mt-6 animate-fadeIn">Initializing AI Interview Coach...</h2>
                   <p className="text-muted-foreground mt-2 animate-fadeIn">Setting up {difficulty} {track} session. Please allow camera + mic.</p>
+                  <p className="text-xs text-primary/60 mt-3 animate-fadeIn">{loadingMessage}</p>
                </div>
             );
         case 'in_progress':
