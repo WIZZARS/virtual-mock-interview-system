@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router";
 import { useEffect } from "react";
+import { Analytics } from "@vercel/analytics/react";
 import LandingPage from "./pages/LandingPage";
 import SetupScreen from "./pages/SetupScreen";
 import Dashboard from "./pages/Dashboard";
@@ -58,6 +59,7 @@ export default function MainRouter() {
         {/* Catch-all redirect */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <Analytics />
     </BrowserRouter>
   )
 }

@@ -9,30 +9,31 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@google/genai": "^1.23.0",
+    "@mediapipe/tasks-vision": "^0.10.12",
+    "@supabase/supabase-js": "^2.45.0",
+    "@vercel/analytics": "^2.0.1",
+    "clsx": "^2.1.1",
+    "html2pdf.js": "^0.10.1",
+    "lucide-react": "latest",
+    "pdfjs-dist": "^4.6.82",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router": "^7.0.0",
-    "@google/genai": "^1.23.0",
-    "@anthropic-ai/sdk": "^0.32.1",
-    "@supabase/supabase-js": "^2.45.0",
-    "zustand": "^5.0.0",
-    "lucide-react": "latest",
     "recharts": "^2.13.0",
-    "@mediapipe/tasks-vision": "^0.10.12",
-    "html2pdf.js": "^0.10.1",
-    "pdfjs-dist": "^4.6.82",
-    "clsx": "^2.1.1",
-    "tailwind-merge": "^2.5.2"
+    "tailwind-merge": "^2.5.2",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0",
-    "tailwindcss": "^3.4.14",
+    "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",
-    "autoprefixer": "^10.4.20"
+    "tailwindcss": "^3.4.14",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
   }
 }
