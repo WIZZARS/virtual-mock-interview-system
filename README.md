@@ -413,9 +413,6 @@ The `vercel.json` includes SPA routing with static file exceptions:
 
 ---
 
-## License
-
-This project was built as an academic project.
 
 ---
 
