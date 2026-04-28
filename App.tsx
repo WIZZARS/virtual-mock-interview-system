@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { GoogleGenAI } from '@google/genai';
+import { groqChat, groqJsonChat, groqTranscribe } from './src/lib/groqApi';
 import { useNavigate } from 'react-router';
 import { InterviewState, TranscriptMessage } from './types';
 import { useInterviewStore } from './src/store/useInterviewStore';
@@ -35,6 +35,8 @@ function pcmBase64ToWavBlob(base64Pcm: string, sampleRate = 24000, channels = 1,
   return new Blob([buf], { type: 'audio/wav' });
 }
 
+// Groq API is used for all AI operations (see src/lib/groqApi.ts)
+
 export default function App() {
   const { track, difficulty, jobDescription, resumeText } = useInterviewStore();
   const { user } = useAuthStore();
@@ -49,7 +51,7 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
-  const [loadingMessage, setLoadingMessage] = useState('Connecting to Gemini AI...');
+  const [loadingMessage, setLoadingMessage] = useState('Connecting to Groq AI...');
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -60,6 +62,7 @@ export default function App() {
   const MAX_QUESTIONS = 15;
   const isInterviewActive = useRef(false);
   const startTimeRef = useRef<number>(0);
+  const startLockRef = useRef(false);
 
   // Recording refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -101,6 +104,7 @@ export default function App() {
   // ============================================================
   const cleanup = useCallback(() => {
     isInterviewActive.current = false;
+    startLockRef.current = false;
     
     // Stop recorder
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -127,11 +131,16 @@ export default function App() {
     mediaStreamRef.current?.getTracks().forEach(t => t.stop());
     mediaStreamRef.current = null;
 
-    // Stop Gemini TTS playback
+    // Stop browser speech synthesis immediately
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+
+    // Stop TTS audio playback
     if (ttsAudioRef.current) {
       ttsAudioRef.current.pause();
       ttsAudioRef.current.src = '';
     }
+    
+
     if (ttsObjectUrlRef.current) {
       URL.revokeObjectURL(ttsObjectUrlRef.current);
       ttsObjectUrlRef.current = null;
@@ -154,8 +163,12 @@ export default function App() {
   // START INTERVIEW
   // ============================================================
   const startInterview = useCallback(async () => {
+    if (startLockRef.current) return;
+    startLockRef.current = true;
+
     if (!track) {
         handleError("Please go back and select a track/difficulty first.");
+        startLockRef.current = false;
         return;
     }
 
@@ -219,14 +232,9 @@ export default function App() {
      if (!isInterviewActive.current) return;
 
      // Show a loading indicator while fetching
-     if (!userSpokenText) setLoadingMessage('Gemini AI is preparing your first question...');
+     if (!userSpokenText) setLoadingMessage('Groq AI is preparing your first question...');
 
      try {
-       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-       if (!apiKey) throw new Error("VITE_GEMINI_API_KEY is not set in .env.local");
-       
-       const ai = new GoogleGenAI({ apiKey });
-       
        if (userSpokenText) {
           conversationHistory.current += `\nCandidate: ${userSpokenText}`;
           questionCount.current++;
@@ -260,36 +268,32 @@ RULES:
 
        const prompt = `${systemInstruction}\n\nHistory:\n${conversationHistory.current || "(First message)"}\n\nYour response:`;
 
-       // Race the API call against a 20-second timeout
+       // Groq chat completion with timeout
        const responseText = await Promise.race([
-         ai.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt })
-           .then(r => (r.text || '').trim()),
+         groqChat(systemInstruction, conversationHistory.current || '(First message)'),
          new Promise<string>((_, reject) =>
-           setTimeout(() => reject(new Error('Gemini response timed out after 20s')), 20000)
+           setTimeout(() => reject(new Error('Groq response timed out after 20s')), 20000)
          )
        ]);
 
-       if (!responseText || !isInterviewActive.current) throw new Error('Empty response from Gemini');
+       if (!responseText || !isInterviewActive.current) throw new Error('Empty response from Groq');
        
        conversationHistory.current += `\nInterviewer: ${responseText}`;
-       setTranscript(prev => [...prev, { speaker: 'ai', text: responseText }]);
        speakThenRecord(responseText);
 
      } catch(e: any) {
-       console.error('❌ Gemini text generation error:', e?.message || e);
+       console.error('❌ Groq text generation error:', e?.message || e);
        if (!isInterviewActive.current) return;
 
        // If this is the very first question, use a hardcoded fallback instead of hanging
        if (questionCount.current === 0 && conversationHistory.current === '') {
-         console.warn('Using fallback opener because Gemini text gen failed');
+         console.warn('Using fallback opener because Groq text gen failed');
          conversationHistory.current += `\nInterviewer: ${FALLBACK_OPENER}`;
-         setTranscript(prev => [...prev, { speaker: 'ai', text: FALLBACK_OPENER }]);
          speakThenRecord(FALLBACK_OPENER);
        } else {
          // Mid-interview failure — prompt user to repeat
          const retryMsg = "I had a brief connection issue. Could you repeat your last answer?";
          conversationHistory.current += `\nInterviewer: ${retryMsg}`;
-         setTranscript(prev => [...prev, { speaker: 'ai', text: retryMsg }]);
          speakThenRecord(retryMsg);
        }
      }
@@ -300,30 +304,6 @@ RULES:
   // → then auto-start recording
   // ============================================================
 
-  /** Browser Web Speech API fallback (always available) */
-  const speakWithBrowser = (text: string, onDone: () => void) => {
-    window.speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(text);
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find(v =>
-      v.name.includes('Google US English') ||
-      v.name.includes('Microsoft David') ||
-      v.name.includes('Microsoft Mark') ||
-      v.name.includes('Samantha') ||
-      v.name.includes('Daniel')
-    ) || voices.find(v => v.lang.startsWith('en') && !v.localService)
-      || voices.find(v => v.lang.startsWith('en'));
-    if (preferred) utt.voice = preferred;
-    utt.rate = 1.0; utt.pitch = 1.0; utt.volume = 1.0;
-    // Chrome keepalive
-    const ka = setInterval(() => {
-      if (!window.speechSynthesis.speaking) { clearInterval(ka); return; }
-      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-    }, 3000);
-    utt.onend = () => { clearInterval(ka); onDone(); };
-    utt.onerror = () => { clearInterval(ka); onDone(); };
-    window.speechSynthesis.speak(utt);
-  };
 
   const speakThenRecord = async (textToSay: string) => {
     if (!isInterviewActive.current) return;
@@ -348,49 +328,35 @@ RULES:
       setTimeout(() => { if (isInterviewActive.current) startRecording(); }, 500);
     };
 
-    try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error('No API key');
-      const ai = new GoogleGenAI({ apiKey });
+    // Update transcript immediately
+    setTranscript(prev => {
+      const last = prev[prev.length - 1];
+      if (last?.text === textToSay) return prev;
+      return [...prev, { speaker: 'ai', text: textToSay }];
+    });
 
-      // Try Gemini TTS (with 15s timeout)
-      const ttsResponse = await Promise.race([
-        ai.models.generateContent({
-          model: 'gemini-2.5-flash-preview-tts',
-          contents: [{ parts: [{ text: textToSay }] }],
-          config: {
-            responseModalities: ['AUDIO'],
-            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } } }
-          }
-        }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('TTS timeout')), 15000)
-        )
-      ]);
+    // Use browser speechSynthesis for TTS (fast & reliable)
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel(); // Stop any previous speech
+      const utterance = new SpeechSynthesisUtterance(textToSay);
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      
+      // Pick a good English voice
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = voices.find(v => v.name.includes('Google') && v.lang.startsWith('en'))
+        || voices.find(v => v.name.includes('Microsoft') && v.lang.startsWith('en'))
+        || voices.find(v => v.lang.startsWith('en'));
+      if (preferred) utterance.voice = preferred;
 
-      const part = ttsResponse.candidates?.[0]?.content?.parts?.[0];
-      const pcmBase64 = (part as any)?.inlineData?.data;
-
-      if (!pcmBase64) throw new Error('No PCM data in TTS response');
-      if (!isInterviewActive.current) return;
-
-      const wavBlob = pcmBase64ToWavBlob(pcmBase64);
-      if (ttsObjectUrlRef.current) URL.revokeObjectURL(ttsObjectUrlRef.current);
-      const url = URL.createObjectURL(wavBlob);
-      ttsObjectUrlRef.current = url;
-
-      const audio = ttsAudioRef.current!;
-      audio.src = url;
-      audio.onended = afterSpeech;
-      audio.onerror = () => { console.warn('Audio element error, using browser TTS'); speakWithBrowser(textToSay, afterSpeech); };
-      await audio.play();
-      console.log('🔊 Gemini TTS playing');
-
-    } catch (err) {
-      console.warn('Gemini TTS unavailable, falling back to browser TTS:', (err as any)?.message);
-      // Graceful fallback to browser Speech Synthesis
-      setIsSpeaking(true);
-      speakWithBrowser(textToSay, afterSpeech);
+      utterance.onend = afterSpeech;
+      utterance.onerror = () => { afterSpeech(); };
+      window.speechSynthesis.speak(utterance);
+      console.log('🔊 Browser TTS speaking');
+    } else {
+      // No TTS available — just show text and continue after delay
+      setTimeout(afterSpeech, 4000);
     }
   };
 
@@ -539,10 +505,9 @@ RULES:
       return;
     }
 
-    // Convert to base64 and send to Gemini
+    // Send audio blob to Groq Whisper for transcription
     try {
-      const base64Audio = await blobToBase64(audioBlob);
-      await processAudioWithGemini(base64Audio, mimeType);
+      await processAudioWithGroq(audioBlob);
     } catch (err) {
       console.error("Error processing audio:", err);
       setIsProcessing(false);
@@ -567,39 +532,17 @@ RULES:
     });
   };
 
-  // Send audio to Gemini for transcription + interview response
-  const processAudioWithGemini = async (base64Audio: string, mimeType: string) => {
+  // Send audio to Groq Whisper for transcription + interview response
+  const processAudioWithGroq = async (audioBlob: Blob) => {
     if (!isInterviewActive.current) return;
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API key not set.");
-      
-      const ai = new GoogleGenAI({ apiKey });
+      let transcription = await groqTranscribe(audioBlob);
+      transcription = transcription.replace(/\[\s*\d+m\d+s.*?\]/g, '').replace(/\[noise\]/gi, '').trim();
 
-      // Step 1: Transcribe the audio
-      const transcribeResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [{
-          role: 'user',
-          parts: [
-            { 
-              inlineData: { 
-                mimeType: mimeType.split(';')[0], // e.g., "audio/webm"
-                data: base64Audio 
-              } 
-            },
-            { 
-              text: 'Transcribe this audio recording accurately. Return ONLY the transcribed text, nothing else. If there is no speech or just noise, return exactly: "[no speech detected]"' 
-            }
-          ]
-        }]
-      });
-
-      const transcription = (transcribeResponse.text || "").trim();
       console.log("📝 Transcription:", transcription);
 
-      if (!transcription || transcription.includes("[no speech detected]") || transcription.length < 3) {
+      if (!transcription || transcription.length < 3) {
         setIsProcessing(false);
         if (isInterviewActive.current) {
           speakThenRecord("I couldn't hear your answer clearly. Could you speak a bit louder and try again?");
@@ -607,15 +550,12 @@ RULES:
         return;
       }
 
-      // Add user's answer to transcript
       setTranscript(prev => [...prev, { speaker: 'user', text: transcription }]);
       setIsProcessing(false);
-
-      // Step 2: Generate AI interviewer response
       await generateNextAIResponse(transcription);
 
     } catch (err) {
-      console.error("Gemini audio processing error:", err);
+      console.error("Groq audio processing error:", err);
       setIsProcessing(false);
       if (isInterviewActive.current) {
         speakThenRecord("Sorry, I had trouble processing that. Could you repeat your answer?");
@@ -652,10 +592,6 @@ RULES:
 
   const generateFinalReport = useCallback(async (finalTranscript: TranscriptMessage[]) => {
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error("API key not set");
-      
-      const ai = new GoogleGenAI({ apiKey });
       const transcriptText = finalTranscript
         .map(t => `${t.speaker === 'user' ? 'Candidate' : 'Interviewer'}: ${t.text}`)
         .join('\n');
@@ -679,13 +615,10 @@ JSON format:
 
 Transcript:\n${transcriptText}`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
-      });
-
-      const reportJsonText = response.text || "";
+      const reportJsonText = await groqJsonChat(
+        'You are an expert interview coach. Generate a performance report as JSON with the exact schema requested.',
+        prompt
+      );
       setFinalReport(reportJsonText);
       setInterviewState('report_ready');
 

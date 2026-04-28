@@ -97,7 +97,7 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
       <header className="h-14 border-b border-border glass-strong px-4 md:px-6 flex items-center justify-between shrink-0 z-20">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 bg-primary/10 text-primary px-2.5 py-1 rounded-lg text-xs font-bold border border-primary/20">
-            <Cpu className="w-3.5 h-3.5" /> Gemini AI
+            <Cpu className="w-3.5 h-3.5" /> Groq AI
           </div>
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
              <span className="px-2 py-0.5 bg-muted rounded-md">{track}</span>

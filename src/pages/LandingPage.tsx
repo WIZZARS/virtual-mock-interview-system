@@ -40,7 +40,7 @@ export default function LandingPage() {
         {/* Hero Section */}
         <div className="text-center max-w-4xl mx-auto mb-20 animate-fadeInUp">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-secondary/10 border border-secondary/20 text-secondary mb-6 text-sm font-medium">
-            <Sparkles className="w-4 h-4" /> Powered by Gemini 2.5 Flash AI
+            <Sparkles className="w-4 h-4" /> Powered by Groq AI
           </div>
           <h1 className="text-5xl sm:text-6xl md:text-7xl font-extrabold tracking-tight mb-8 leading-[1.1] text-foreground">
             Ace Every Interview. <br/>
