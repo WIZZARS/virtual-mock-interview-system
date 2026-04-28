@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { TranscriptMessage } from '../types';
 import { useInterviewStore } from '../src/store/useInterviewStore';
-import { Mic, MicOff, Eye, BadgeInfo, PhoneOff, Cpu, Volume2, Clock, Send, Keyboard, Square, Loader2 } from 'lucide-react';
+import { CoachingTip, FeedbackCategory } from '../src/hooks/useVisionTracker';
+import { Mic, MicOff, Eye, BadgeInfo, PhoneOff, Cpu, Volume2, Clock, Send, Keyboard, Square, Loader2, User, Smile, Move, ZoomIn, CircleAlert, CheckCircle2, Sparkles } from 'lucide-react';
 
 interface InterviewScreenProps {
   videoRef: React.RefObject<HTMLVideoElement>;
   transcript: TranscriptMessage[];
-  liveFeedback: string[];
+  liveFeedback: CoachingTip[];
   startTime: number;
   isSpeaking: boolean;
   isRecording: boolean;
@@ -23,6 +24,7 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
 }) => {
   const { track, difficulty } = useInterviewStore();
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const coachingTopRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [elapsed, setElapsed] = useState(0);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
@@ -57,6 +59,11 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript]);
+
+  // Auto-scroll coaching tips to top when new tip arrives
+  useEffect(() => {
+    coachingTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [liveFeedback]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -220,21 +227,57 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
           {/* Live Coaching */}
           <div className="shrink-0 h-[28%] bg-card border border-border rounded-2xl p-4 shadow-sm flex flex-col min-h-[150px]">
             <h2 className="text-sm font-extrabold flex items-center gap-2 mb-2 shrink-0">
-              <Eye className="w-4 h-4 text-secondary" /> Real-Time AI Coaching
+              <Sparkles className="w-4 h-4 text-secondary" /> Real-Time AI Coaching
             </h2>
             <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+              <div ref={coachingTopRef} />
               {liveFeedback.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-50 space-y-1">
                    <BadgeInfo className="w-6 h-6" />
-                   <p className="text-xs font-medium text-center">Posture and eye contact coaching tips will appear here.</p>
+                   <p className="text-xs font-medium text-center">AI is analyzing your posture, eye contact, expressions & body language...</p>
                 </div>
               ) : (
-                liveFeedback.map((feedback, index) => (
-                  <div key={index} className="bg-muted p-2.5 rounded-xl animate-slideInLeft border border-border/50">
-                    <span className="font-bold text-secondary text-xs block mb-0.5">💡 Tip</span> 
-                    <span className="text-foreground text-xs leading-relaxed">{feedback}</span>
-                  </div>
-                ))
+                liveFeedback.map((tip, index) => {
+                  const iconMap: Record<FeedbackCategory, React.ReactNode> = {
+                    eye_contact: <Eye className="w-3.5 h-3.5" />,
+                    posture: <User className="w-3.5 h-3.5" />,
+                    head_tilt: <Move className="w-3.5 h-3.5" />,
+                    expression: <Smile className="w-3.5 h-3.5" />,
+                    proximity: <ZoomIn className="w-3.5 h-3.5" />,
+                    fidgeting: <Move className="w-3.5 h-3.5" />,
+                    positive: <CheckCircle2 className="w-3.5 h-3.5" />,
+                    face_missing: <CircleAlert className="w-3.5 h-3.5" />,
+                  };
+                  const labelMap: Record<FeedbackCategory, string> = {
+                    eye_contact: 'Eye Contact',
+                    posture: 'Posture',
+                    head_tilt: 'Head Position',
+                    expression: 'Expression',
+                    proximity: 'Camera Distance',
+                    fidgeting: 'Movement',
+                    positive: 'Great Job!',
+                    face_missing: 'Visibility',
+                  };
+                  const severityStyles = {
+                    success: 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400',
+                    warning: 'bg-amber-500/10 border-amber-500/25 text-amber-400',
+                    info: 'bg-sky-500/10 border-sky-500/25 text-sky-400',
+                  };
+                  const labelStyles = {
+                    success: 'text-emerald-400',
+                    warning: 'text-amber-400',
+                    info: 'text-sky-400',
+                  };
+                  return (
+                    <div key={index} className={`p-2.5 rounded-xl animate-slideInLeft border ${severityStyles[tip.severity]}`}>
+                      <div className={`flex items-center gap-1.5 mb-0.5 ${labelStyles[tip.severity]}`}>
+                        {iconMap[tip.category]}
+                        <span className="font-bold text-xs">{labelMap[tip.category]}</span>
+                      </div>
+                      <span className="text-foreground text-xs leading-relaxed">{tip.message}</span>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

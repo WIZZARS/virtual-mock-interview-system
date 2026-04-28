@@ -6,7 +6,7 @@ import { useInterviewStore } from './src/store/useInterviewStore';
 import { useAuthStore } from './src/store/useAuthStore';
 import { InterviewScreen } from './components/InterviewScreen';
 import { ReportScreen } from './components/ReportScreen';
-import { useVisionTracker } from './src/hooks/useVisionTracker';
+import { useVisionTracker, CoachingTip } from './src/hooks/useVisionTracker';
 
 // ============================================================
 // HELPERS: Build a WAV blob from raw PCM (Int16, 24 kHz, mono)
@@ -44,7 +44,7 @@ export default function App() {
 
   const [interviewState, setInterviewState] = useState<InterviewState>('idle');
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
-  const [liveFeedback, setLiveFeedback] = useState<string[]>([]);
+  const [liveFeedback, setLiveFeedback] = useState<CoachingTip[]>([]);
   const [finalReport, setFinalReport] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -91,8 +91,12 @@ export default function App() {
     let interval: ReturnType<typeof setInterval>;
     if (interviewState === 'in_progress' && isTrackerReady) {
        interval = setInterval(() => {
-          analyzeVideoFrame((tip) => {
-              setLiveFeedback(prev => [tip, ...prev].slice(0, 5));
+          analyzeVideoFrame((tip: CoachingTip) => {
+              setLiveFeedback(prev => {
+                // Avoid exact duplicate messages in a row
+                if (prev.length > 0 && prev[0].message === tip.message) return prev;
+                return [tip, ...prev].slice(0, 8);
+              });
           });
        }, 100);
     }
