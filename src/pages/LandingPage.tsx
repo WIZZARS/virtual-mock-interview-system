@@ -1,9 +1,11 @@
 import React, { useRef } from "react";
 import { Link } from "react-router";
 import { Mic, Eye, BarChart, History, PlayCircle, Star, ShieldCheck, Zap, ArrowRight, CheckCircle2, Users, Sparkles } from "lucide-react";
+import { useAuthStore } from "../store/useAuthStore";
 
 export default function LandingPage() {
   const featuresRef = useRef<HTMLDivElement>(null);
+  const { user } = useAuthStore();
 
   const scrollToFeatures = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -28,10 +30,21 @@ export default function LandingPage() {
         </div>
         <div className="flex items-center gap-4 md:gap-6">
           <a href="#features" onClick={scrollToFeatures} className="text-sm font-medium hover:text-primary transition-colors text-muted-foreground hidden md:block">Features</a>
-          <Link to="/login" className="text-sm font-medium hover:text-primary transition-colors text-muted-foreground">Login</Link>
-          <Link to="/setup" className="bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-sm font-bold shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:scale-105 transition-all">
-            Get Started
-          </Link>
+          {user ? (
+            <>
+              <Link to="/dashboard" className="text-sm font-medium hover:text-primary transition-colors text-muted-foreground">Dashboard</Link>
+              <Link to="/setup" className="bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-sm font-bold shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:scale-105 transition-all">
+                New Practice
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link to="/login" className="text-sm font-medium hover:text-primary transition-colors text-muted-foreground">Login</Link>
+              <Link to="/setup" className="bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-sm font-bold shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:scale-105 transition-all">
+                Get Started
+              </Link>
+            </>
+          )}
         </div>
       </header>
 

@@ -599,14 +599,29 @@ RULES:
       const metrics = getFinalMetrics();
       const duration = Math.round((Date.now() - startTimeRef.current) / 1000);
       
-      const prompt = `You are an expert interview coach. Generate a performance report as JSON.
+      const questionCount = finalTranscript.filter(t => t.speaker === 'ai').length;
+      const answerCount = finalTranscript.filter(t => t.speaker === 'user').length;
+      
+      const prompt = `You are a STRICT and HONEST interview coach. Generate a realistic performance report as JSON.
 
-VISION DATA: Eye Contact: ${metrics.eyeContactScore}/10, Posture: ${metrics.postureScore}/10
-Duration: ${Math.floor(duration / 60)}m ${duration % 60}s | Track: ${track} | Level: ${difficulty}
+CRITICAL RULES FOR SCORING:
+- If the interview lasted less than 2 minutes, ALL scores must be 2.0 or below (the candidate barely participated).
+- If the candidate answered fewer than 3 questions, scores should not exceed 4.0.
+- If answers are very short (1-2 words each), communication and confidence scores must be LOW (1-3).
+- Do NOT inflate scores. A 7+ score requires genuinely good, detailed answers.
+- Base scores ONLY on what actually happened in the transcript, not on assumptions.
+- Eye contact and body language scores come from vision data — use them as-is.
 
-JSON format:
+SESSION FACTS:
+- Duration: ${Math.floor(duration / 60)}m ${duration % 60}s
+- Questions asked by AI: ${questionCount}
+- Answers given by candidate: ${answerCount}
+- Track: ${track} | Level: ${difficulty}
+- Vision Data: Eye Contact: ${metrics.eyeContactScore}/10, Posture: ${metrics.postureScore}/10
+
+JSON format (all scores 0.0-10.0):
 {
-  "overallSummary": "Summary paragraph...",
+  "overallSummary": "Honest summary of what happened in this session...",
   "scores": { "communication": N, "confidence": N, "bodyLanguage": ${metrics.postureScore}, "eyeContact": ${metrics.eyeContactScore}, "speakingPace": N, "overall": N },
   "detailedAnalysis": { "communication": "...", "confidence": "...", "bodyLanguage": "...", "eyeContact": "...", "speakingPace": "..." },
   "strengths": ["...", "...", "..."],
