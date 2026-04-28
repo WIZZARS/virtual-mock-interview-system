@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router";
 import { supabase } from "../lib/supabase";
 import { useAuthStore } from "../store/useAuthStore";
-import { Mic, Mail, Lock, ArrowRight } from "lucide-react";
+import { Mail, Lock, ArrowRight } from "lucide-react";
+import { LogoWordmark, ThemeToggle } from "../components/Logo";
 
 export default function LoginScreen() {
   const navigate = useNavigate();
@@ -59,12 +60,15 @@ export default function LoginScreen() {
       <div className="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/10 blur-[100px] rounded-full pointer-events-none" />
       <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-secondary/10 blur-[100px] rounded-full pointer-events-none" />
 
-      <Link to="/" className="absolute top-8 left-8 flex items-center gap-2 font-extrabold text-2xl tracking-tight z-50">
-        <div className="bg-primary p-2 rounded-xl text-primary-foreground">
-          <Mic className="w-5 h-5" />
-        </div>
-        InterviewIQ
-      </Link>
+      {/* Logo top-left */}
+      <div className="absolute top-6 left-8 z-50">
+        <LogoWordmark size={44} />
+      </div>
+
+      {/* Theme toggle top-right */}
+      <div className="absolute top-7 right-8 z-50">
+        <ThemeToggle />
+      </div>
 
       <div className="w-full max-w-md bg-card/60 backdrop-blur-xl border border-border/50 rounded-3xl p-8 shadow-2xl relative z-10 animate-fadeInUp">
         <div className="text-center mb-8">

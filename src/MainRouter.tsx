@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard";
 import LoginScreen from "./pages/LoginScreen";
 import InterviewApp from "../App";
 import { useAuthStore } from "./store/useAuthStore";
+import { useThemeStore } from "./store/useThemeStore";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuthStore();
@@ -32,10 +33,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 export default function MainRouter() {
   const initialize = useAuthStore(s => s.initialize);
+  const initTheme = useThemeStore(s => s.init);
   
   useEffect(() => {
     initialize();
-  }, [initialize]);
+    initTheme();
+  }, [initialize, initTheme]);
 
   return (
     <BrowserRouter>

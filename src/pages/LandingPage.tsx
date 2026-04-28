@@ -1,7 +1,8 @@
 import React, { useRef } from "react";
 import { Link } from "react-router";
-import { Mic, Eye, BarChart, History, PlayCircle, Star, ShieldCheck, Zap, ArrowRight, CheckCircle2, Users, Sparkles } from "lucide-react";
+import { Eye, BarChart, History, PlayCircle, Star, ShieldCheck, ArrowRight, CheckCircle2, Users, Sparkles, Mic } from "lucide-react";
 import { useAuthStore } from "../store/useAuthStore";
+import { LogoWordmark, ThemeToggle } from "../components/Logo";
 
 export default function LandingPage() {
   const featuresRef = useRef<HTMLDivElement>(null);
@@ -22,25 +23,43 @@ export default function LandingPage() {
 
       {/* Header */}
       <header className="border-b border-border/40 px-6 md:px-8 py-4 flex justify-between items-center glass-strong sticky top-0 z-50">
-        <div className="flex items-center gap-2">
-          <div className="bg-primary p-2 rounded-xl text-primary-foreground">
-            <Mic className="w-5 h-5" />
-          </div>
-          <span className="font-extrabold text-xl md:text-2xl tracking-tight text-foreground">InterviewIQ</span>
-        </div>
-        <div className="flex items-center gap-4 md:gap-6">
-          <a href="#features" onClick={scrollToFeatures} className="text-sm font-medium hover:text-primary transition-colors text-muted-foreground hidden md:block">Features</a>
+        {/* Brand / Logo */}
+        <LogoWordmark size={52} />
+
+        {/* Nav right */}
+        <div className="flex items-center gap-3 md:gap-5">
+          <a
+            href="#features"
+            onClick={scrollToFeatures}
+            className="text-sm font-medium hover:text-primary transition-colors text-muted-foreground hidden md:block"
+          >
+            Features
+          </a>
+
+          {/* Dark / Light mode toggle */}
+          <ThemeToggle />
+
           {user ? (
             <>
-              <Link to="/dashboard" className="text-sm font-medium hover:text-primary transition-colors text-muted-foreground">Dashboard</Link>
-              <Link to="/setup" className="bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-sm font-bold shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:scale-105 transition-all">
+              <Link to="/dashboard" className="text-sm font-medium hover:text-primary transition-colors text-muted-foreground">
+                Dashboard
+              </Link>
+              <Link
+                to="/setup"
+                className="bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-sm font-bold shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:scale-105 transition-all"
+              >
                 New Practice
               </Link>
             </>
           ) : (
             <>
-              <Link to="/login" className="text-sm font-medium hover:text-primary transition-colors text-muted-foreground">Login</Link>
-              <Link to="/setup" className="bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-sm font-bold shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:scale-105 transition-all">
+              <Link to="/login" className="text-sm font-medium hover:text-primary transition-colors text-muted-foreground">
+                Login
+              </Link>
+              <Link
+                to="/setup"
+                className="bg-primary text-primary-foreground px-5 py-2.5 rounded-full text-sm font-bold shadow-lg shadow-primary/30 hover:shadow-primary/50 hover:scale-105 transition-all"
+              >
                 Get Started
               </Link>
             </>

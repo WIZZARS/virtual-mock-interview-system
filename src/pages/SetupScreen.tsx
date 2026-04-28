@@ -5,6 +5,7 @@ import {
   CheckCircle2, Video, Mic as MicIcon, VideoOff, Settings, FileText, X, Loader2
 } from "lucide-react";
 import { useInterviewStore } from "../store/useInterviewStore";
+import { ThemeToggle } from "../components/Logo";
 import { cn } from "../lib/utils";
 
 const TRACKS = [
@@ -124,9 +125,12 @@ export default function SetupScreen() {
               <p className="text-muted-foreground text-sm">Configure your AI interview coach session.</p>
             </div>
           </div>
-          <Link to="/" className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors">
-            ← Home
-          </Link>
+          <div className="flex items-center gap-4">
+            <ThemeToggle />
+            <Link to="/" className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors">
+              ← Home
+            </Link>
+          </div>
         </div>
         
         {/* Step 1: Track Selection */}

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { TranscriptMessage } from '../types';
 import { useInterviewStore } from '../src/store/useInterviewStore';
 import { CoachingTip, FeedbackCategory } from '../src/hooks/useVisionTracker';
+import { ThemeToggle } from '../src/components/Logo';
 import { Mic, MicOff, Eye, BadgeInfo, PhoneOff, Cpu, Volume2, Clock, Send, Keyboard, Square, Loader2, User, Smile, Move, ZoomIn, CircleAlert, CheckCircle2, Sparkles } from 'lucide-react';
 
 interface InterviewScreenProps {
@@ -118,6 +119,7 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
         </div>
         
         <div className="flex items-center gap-3">
+          <ThemeToggle />
           {/* Status Badge */}
           <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all duration-300 ${
             isSpeaking 
@@ -237,7 +239,7 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
                    <p className="text-xs font-medium text-center">AI is analyzing your posture, eye contact, expressions & body language...</p>
                 </div>
               ) : (
-                liveFeedback.map((tip, index) => {
+                [...liveFeedback].reverse().map((tip, index) => {
                   const iconMap: Record<FeedbackCategory, React.ReactNode> = {
                     eye_contact: <Eye className="w-3.5 h-3.5" />,
                     posture: <User className="w-3.5 h-3.5" />,

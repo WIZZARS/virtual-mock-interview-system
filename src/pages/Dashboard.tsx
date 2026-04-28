@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { useAuthStore } from "../store/useAuthStore";
 import { supabase } from "../lib/supabase";
+import { LogoWordmark, ThemeToggle } from "../components/Logo";
 
 export default function Dashboard() {
   const { user, signOut } = useAuthStore();
@@ -75,11 +76,8 @@ export default function Dashboard() {
       
       {/* Sidebar */}
       <aside className="w-64 border-r border-border bg-card/50 backdrop-blur flex flex-col py-6 shrink-0">
-        <div className="font-extrabold text-xl tracking-tight text-foreground mb-8 flex items-center gap-2 px-6">
-           <div className="bg-primary p-1.5 rounded-lg">
-             <Zap className="w-4 h-4 text-primary-foreground" />
-           </div>
-           InterviewIQ
+        <div className="px-6 mb-8 mt-2">
+          <LogoWordmark size={36} />
         </div>
         
         <nav className="flex-1 px-3 space-y-1">
@@ -107,6 +105,10 @@ export default function Dashboard() {
 
         {/* User Info + Sign Out */}
         <div className="px-4 pt-4 border-t border-border mt-auto space-y-3">
+          <div className="flex items-center justify-between px-2 mb-2">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Appearance</span>
+            <ThemeToggle />
+          </div>
           <div className="flex items-center gap-3 px-2">
             <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm">
               {user?.email?.[0]?.toUpperCase() || 'U'}
