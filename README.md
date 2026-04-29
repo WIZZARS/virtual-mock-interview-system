@@ -12,7 +12,7 @@
 
 > **Practice interviews with an AI coach that listens, responds, and gives real-time behavioral feedback on your eye contact, posture, and communication skills.**
 
-🔗 **Live Demo:** [https://aiimterview.dev](https://aiinterviews.dev)
+🔗 **Live Demo:** [https://aiinterview.dev](https://aiinterviews.dev)
 
 ---
 
