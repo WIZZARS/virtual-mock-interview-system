@@ -101,6 +101,7 @@ export function useVisionTracker(videoRef: React.RefObject<HTMLVideoElement | nu
     totalFrames: 0,
     goodEyeContactFrames: 0,
     goodPostureFrames: 0,
+    faceMissingFrames: 0,
   });
 
   // Streak tracking for intelligent feedback timing
@@ -197,6 +198,7 @@ export function useVisionTracker(videoRef: React.RefObject<HTMLVideoElement | nu
         // ── No face detected ──────────────────────────────────────
         if (!results.faceBlendshapes || results.faceBlendshapes.length === 0) {
             streaks.current.consecutiveFaceMissing++;
+            sessionStats.current.faceMissingFrames++;
             // Alert after ~2 seconds of missing face (20 frames at 100ms interval)
             if (streaks.current.consecutiveFaceMissing > 20) {
               emitTip('face_missing', 'warning', FACE_MISSING_TIPS, 15000, onFeedback);
@@ -421,15 +423,26 @@ export function useVisionTracker(videoRef: React.RefObject<HTMLVideoElement | nu
 
   const getFinalMetrics = () => {
     const total = sessionStats.current.totalFrames;
-    if (total === 0) return { eyeContactScore: 7, postureScore: 7 }; // Default fallback
+    const missing = sessionStats.current.faceMissingFrames;
+    const totalAnalyzed = total + missing;
+
+    // If the vision engine never tracked any frames at all, return 0
+    if (totalAnalyzed === 0) return { eyeContactScore: 0, postureScore: 0 };
+
+    // If the user was never visible (all frames had no face), return 0
+    if (total === 0) return { eyeContactScore: 0, postureScore: 0 };
 
     const eyePercent = sessionStats.current.goodEyeContactFrames / total;
     const posturePercent = sessionStats.current.goodPostureFrames / total;
 
-    // Convert to strict mathematically accurate 0-10 format
+    // Penalize proportionally for time face was missing from camera
+    // e.g., if face was missing 50% of the time, halve the score
+    const visibilityRatio = total / totalAnalyzed;
+
+    // Convert to strict mathematically accurate 0-10 format, scaled by visibility
     return {
-       eyeContactScore: Math.round((eyePercent * 10) * 10) / 10,
-       postureScore: Math.round((posturePercent * 10) * 10) / 10
+       eyeContactScore: Math.round((eyePercent * visibilityRatio * 10) * 10) / 10,
+       postureScore: Math.round((posturePercent * visibilityRatio * 10) * 10) / 10
     };
   };
 
