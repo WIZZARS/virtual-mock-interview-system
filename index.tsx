@@ -2,6 +2,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import MainRouter from './src/MainRouter';
+import { AppErrorBoundary } from './src/components/AppErrorBoundary';
 import './src/index.css';
 
 const rootElement = document.getElementById('root');
@@ -12,6 +13,8 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <MainRouter />
+    <AppErrorBoundary>
+      <MainRouter />
+    </AppErrorBoundary>
   </React.StrictMode>
 );

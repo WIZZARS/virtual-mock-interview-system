@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Download, RefreshCcw, Award, MessageSquare, ShieldCheck, UserCheck, Eye, LayoutDashboard, Gauge, TrendingUp, Lightbulb, Trophy, ArrowRight } from 'lucide-react';
+import { Download, RefreshCcw, Award, MessageSquare, ShieldCheck, UserCheck, Eye, LayoutDashboard, Gauge, TrendingUp, Lightbulb, Trophy, ArrowRight, BarChart2, BookOpen, Target, ChevronDown, ChevronUp, Star, HelpCircle } from 'lucide-react';
 import { useInterviewStore } from '../src/store/useInterviewStore';
 
 interface ReportScreenProps {
@@ -164,6 +164,126 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({ report, onRestart, o
             </div>
           )}
 
+          {/* ── STAR Structure Breakdown (Behavioral STAR track only) ────── */}
+          {data?.starStructureAnalysis && (
+            <div className="bg-gradient-to-br from-violet-500/5 to-purple-500/5 border border-violet-500/20 rounded-2xl p-6 mt-6">
+              <h4 className="font-bold text-lg mb-1 text-violet-400 flex items-center gap-2">
+                <Star className="w-5 h-5 fill-violet-400" /> STAR Structure Breakdown
+              </h4>
+              <p className="text-xs text-muted-foreground mb-5">How well you used the Situation → Task → Action → Result framework across your answers.</p>
+
+              {/* Overall STAR score */}
+              <div className="flex items-center gap-4 mb-6 bg-card border border-border rounded-2xl p-4">
+                <div className="flex flex-col items-center bg-violet-500/10 rounded-xl p-4 min-w-[90px]">
+                  <span className="text-xs font-bold text-violet-400 mb-1 tracking-widest uppercase">STAR Score</span>
+                  <span className={`text-4xl font-black ${data.starStructureAnalysis.overallStarScore >= 7 ? 'text-green-400' : data.starStructureAnalysis.overallStarScore >= 5 ? 'text-yellow-400' : 'text-red-400'}`}>
+                    {data.starStructureAnalysis.overallStarScore}
+                  </span>
+                  <span className="text-xs text-muted-foreground">/ 10</span>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed flex-1">{data.starStructureAnalysis.starFeedback}</p>
+              </div>
+
+              {/* Individual component bars */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                  { label: 'Situation', key: 'situationScore', letter: 'S', desc: 'Context setting' },
+                  { label: 'Task', key: 'taskScore', letter: 'T', desc: 'Personal responsibility' },
+                  { label: 'Action', key: 'actionScore', letter: 'A', desc: 'Steps you personally took' },
+                  { label: 'Result', key: 'resultScore', letter: 'R', desc: 'Measurable outcome' },
+                ].map(({ label, key, letter, desc }) => {
+                  const score = data.starStructureAnalysis[key] ?? 0;
+                  const isHigh = score >= 7;
+                  const isMed = score >= 5 && score < 7;
+                  const colorBar = isHigh ? 'bg-green-500' : isMed ? 'bg-yellow-500' : 'bg-red-500';
+                  const colorText = isHigh ? 'text-green-400' : isMed ? 'text-yellow-400' : 'text-red-400';
+                  return (
+                    <div key={key} className="bg-card border border-border p-4 rounded-xl">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="bg-violet-500/20 text-violet-400 w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm shrink-0">{letter}</span>
+                        <div className="flex-1">
+                          <div className="flex justify-between items-baseline">
+                            <span className="font-bold text-sm">{label}</span>
+                            <span className={`font-extrabold text-sm ${colorText}`}>{score}/10</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{desc}</p>
+                        </div>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                        <div className={`h-full ${colorBar} rounded-full animate-barGrow`} style={{ width: `${score * 10}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Ambiguity Training Analysis ───────────────────────────────────────── */}
+          {data?.ambiguityAnalysis && (
+            <div className="bg-orange-500/5 border border-orange-500/20 rounded-2xl p-6 mt-6">
+              <h4 className="font-bold text-lg mb-1 text-orange-500 flex items-center gap-2">
+                <HelpCircle className="w-5 h-5" /> Ambiguity Handling
+              </h4>
+              <p className="text-xs text-muted-foreground mb-5">How well you asked clarifying questions when presented with under-specified scenarios.</p>
+
+              <div className="flex items-center gap-4 bg-card border border-border rounded-2xl p-4">
+                <div className="flex flex-col items-center bg-orange-500/10 rounded-xl p-4 min-w-[90px]">
+                  <span className="text-xs font-bold text-orange-500 mb-1 tracking-widest uppercase">Score</span>
+                  <span className={`text-4xl font-black ${data.ambiguityAnalysis.clarificationScore >= 7 ? 'text-green-400' : data.ambiguityAnalysis.clarificationScore >= 5 ? 'text-yellow-400' : 'text-red-400'}`}>
+                    {data.ambiguityAnalysis.clarificationScore}
+                  </span>
+                  <span className="text-xs text-muted-foreground">/ 10</span>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed flex-1">{data.ambiguityAnalysis.feedback}</p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Industry Benchmark ───────────────────────────────────────── */}
+          {data?.industryBenchmark && (
+            <div className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-6 mt-6">
+              <h4 className="font-bold text-lg mb-3 text-blue-400 flex items-center gap-2">
+                <BarChart2 className="w-5 h-5" /> Industry Benchmark
+              </h4>
+              <p className="text-sm text-muted-foreground leading-relaxed">{data.industryBenchmark}</p>
+            </div>
+          )}
+
+          {/* ── Question Debrief ─────────────────────────────────────────── */}
+          {data?.questionDebrief && data.questionDebrief.length > 0 && (
+            <div className="bg-card border border-border rounded-2xl p-6 mt-6">
+              <h4 className="font-bold text-lg mb-4 text-foreground flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-secondary" /> Question Debrief
+              </h4>
+              <div className="space-y-3">
+                {data.questionDebrief.map((item: any, i: number) => (
+                  <DebriefCard key={i} index={i} item={item} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Next Steps ───────────────────────────────────────────────── */}
+          {data?.nextSteps && data.nextSteps.length > 0 && (
+            <div className="bg-secondary/5 border border-secondary/20 rounded-2xl p-6 mt-6">
+              <h4 className="font-bold text-lg mb-4 text-secondary flex items-center gap-2">
+                <Target className="w-5 h-5" /> Your Next Steps
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {data.nextSteps.map((step: any, i: number) => (
+                  <div key={i} className="bg-card border border-border rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="bg-secondary/20 text-secondary w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0">{i+1}</span>
+                      <span className="font-semibold text-sm text-foreground">{step.action}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed pl-8">{step.resource}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         </div>
         {/* End of PDF-exportable content */}
 
@@ -274,4 +394,34 @@ function AnalysisCard({ title, text, className = "" }: { title: string; text?: s
        <p className="text-sm text-muted-foreground leading-relaxed">{text || 'No analysis available.'}</p>
     </div>
   )
+}
+
+function DebriefCard({ index, item }: { index: number; item: { question: string; whyAsked: string; idealApproach: string } }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border border-border rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-muted/40 transition-colors"
+      >
+        <div className="flex items-start gap-3">
+          <span className="bg-primary/10 text-primary w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">{index + 1}</span>
+          <span className="text-sm font-medium text-foreground line-clamp-2">{item.question}</span>
+        </div>
+        {open ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-3 border-t border-border/50 pt-3">
+          <div>
+            <p className="text-xs font-bold text-secondary mb-1">Why this was asked</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">{item.whyAsked}</p>
+          </div>
+          <div>
+            <p className="text-xs font-bold text-primary mb-1">Ideal approach</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">{item.idealApproach}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

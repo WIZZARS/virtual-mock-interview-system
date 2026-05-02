@@ -2,16 +2,21 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { 
   Briefcase, Code, User, ChevronRight, UploadCloud, 
-  CheckCircle2, Video, Mic as MicIcon, VideoOff, Settings, FileText, X, Loader2
+  CheckCircle2, Video, Mic as MicIcon, VideoOff, Settings, FileText, X, Loader2,
+  Building2, Rocket, Star, Layers, HelpCircle
 } from "lucide-react";
 import { useInterviewStore } from "../store/useInterviewStore";
 import { ThemeToggle } from "../components/Logo";
 import { cn } from "../lib/utils";
 
 const TRACKS = [
-  { id: "HR", title: "HR & Behavioral", icon: User, desc: "Culture-fit, teamwork, and leadership questions." },
-  { id: "Technical", title: "Technical", icon: Code, desc: "Coding, architecture, and problem-solving." },
-  { id: "General", title: "General", icon: Briefcase, desc: "A mix of all standard interview topics." }
+  { id: "HR", title: "HR & Behavioral", icon: User, desc: "Culture fit, teamwork, and leadership questions.", badge: null },
+  { id: "Technical", title: "Technical", icon: Code, desc: "Coding, architecture, and problem-solving.", badge: null },
+  { id: "General", title: "General Mix", icon: Briefcase, desc: "A blend of all standard interview topics.", badge: null },
+  { id: "FAANG Technical", title: "FAANG Technical", icon: Building2, desc: "DS&A, Big-O, edge cases — Google/Meta/Amazon style.", badge: "FAANG" },
+  { id: "System Design", title: "System Design", icon: Layers, desc: "Scalability, distributed systems, and tradeoffs.", badge: "FAANG" },
+  { id: "Startup Behavioral", title: "Startup Behavioral", icon: Rocket, desc: "Ownership, pragmatism, and culture fit for startups.", badge: "Startup" },
+  { id: "Behavioral STAR", title: "Behavioral STAR", icon: Star, desc: "Pure behavioral questions using the STAR framework.", badge: null },
 ];
 
 const DIFFICULTIES = [
@@ -23,35 +28,42 @@ const DIFFICULTIES = [
 export default function SetupScreen() {
   const navigate = useNavigate();
   const { 
-    track, difficulty, jobDescription, resumeFileName, 
-    setTrack, setDifficulty, setJobDescription, setResumeFileName, setResumeText 
+    track, difficulty, jobDescription, resumeFileName, vagueMode,
+    setTrack, setDifficulty, setJobDescription, setResumeFileName, setResumeText, setVagueMode
   } = useInterviewStore();
   
   // Media Preview State
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [mediaError, setMediaError] = useState("");
+  const [mediaLoading, setMediaLoading] = useState(false);
   const [resumeLoading, setResumeLoading] = useState(false);
   const [resumeParsed, setResumeParsed] = useState(false);
 
-  useEffect(() => {
-    // Start camera preview
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then((s) => {
-        setStream(s);
-        if (videoRef.current) {
-          videoRef.current.srcObject = s;
-        }
-      })
-      .catch((err) => {
-        console.error("Media permission denied", err);
-        setMediaError("Camera and Microphone permissions are required for the interview.");
-      });
+  const testDevices = async () => {
+    setMediaLoading(true);
+    setMediaError("");
 
-    return () => {
-      // Cleanup stream on unmount — use the ref approach to avoid stale closure
-    };
-  }, []);
+    try {
+      stream?.getTracks().forEach(t => t.stop());
+      const nextStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      setStream(nextStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = nextStream;
+      }
+    } catch (err) {
+      console.error("Media permission denied", err);
+      setMediaError("Camera and microphone permissions are required for the interview.");
+    } finally {
+      setMediaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
 
   // Clean up stream on unmount
   useEffect(() => {
@@ -139,7 +151,7 @@ export default function SetupScreen() {
             <span className="bg-primary text-primary-foreground w-7 h-7 rounded-full flex items-center justify-center text-sm font-black">1</span> 
             Select Interview Track
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {TRACKS.map((t) => {
               const Icon = t.icon;
               const isSelected = track === t.id;
@@ -153,9 +165,15 @@ export default function SetupScreen() {
                   )}
                 >
                   {isSelected && <CheckCircle2 className="absolute top-3 right-3 text-primary w-5 h-5 animate-fadeIn" />}
+                  {t.badge && !isSelected && (
+                    <span className={cn(
+                      "absolute top-2 right-2 text-[10px] font-black px-1.5 py-0.5 rounded-md",
+                      t.badge === 'FAANG' ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'
+                    )}>{t.badge}</span>
+                  )}
                   <Icon className={cn("w-6 h-6 mb-3", isSelected ? "text-primary" : "text-muted-foreground")} />
-                  <h3 className="font-bold">{t.title}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">{t.desc}</p>
+                  <h3 className="font-bold text-sm">{t.title}</h3>
+                  <p className="text-xs text-muted-foreground mt-1">{t.desc}</p>
                 </button>
               )
             })}
@@ -247,6 +265,33 @@ export default function SetupScreen() {
                  </label>
                )}
             </div>
+
+            {/* Advanced: Vague Mode */}
+            <div className="bg-card border border-border rounded-2xl p-6 shadow-sm flex items-start gap-4 transition-all hover:border-orange-500/30">
+              <div className="bg-orange-500/10 p-3 rounded-xl mt-1 shrink-0">
+                <HelpCircle className="w-6 h-6 text-orange-500" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-bold flex items-center gap-2 text-foreground">
+                    Ambiguity Training
+                    <span className="bg-orange-500/20 text-orange-500 text-[10px] font-black px-1.5 py-0.5 rounded-md uppercase">Advanced</span>
+                  </h2>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer"
+                      checked={vagueMode}
+                      onChange={(e) => setVagueMode(e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
+                  </label>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                  The AI will ask intentionally vague, under-specified questions. You must ask clarifying questions before answering to score well.
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Step 5: Camera/Mic Test */}
@@ -262,9 +307,17 @@ export default function SetupScreen() {
                    <div className="text-center p-4">
                      <VideoOff className="w-10 h-10 text-destructive mx-auto mb-2" />
                      <p className="text-sm text-destructive font-medium">{mediaError}</p>
-                     <p className="text-xs text-muted-foreground mt-2">Please allow camera & mic access in your browser settings.</p>
+                     <p className="text-xs text-muted-foreground mt-2">Please allow camera and mic access in your browser settings.</p>
+                     <button
+                       onClick={testDevices}
+                       disabled={mediaLoading}
+                       className="mt-4 inline-flex items-center justify-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground disabled:opacity-50"
+                     >
+                       {mediaLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                       Try Again
+                     </button>
                    </div>
-                 ) : (
+                 ) : stream ? (
                    <video 
                      ref={videoRef} 
                      autoPlay 
@@ -272,10 +325,24 @@ export default function SetupScreen() {
                      muted 
                      className="w-full h-full object-cover transform -scale-x-100" 
                    />
+                 ) : (
+                   <div className="text-center p-6">
+                     <Video className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+                     <p className="text-sm font-semibold text-white">Camera preview is off</p>
+                     <p className="text-xs text-white/60 mt-1 mb-4">Test your camera and microphone before beginning.</p>
+                     <button
+                       onClick={testDevices}
+                       disabled={mediaLoading}
+                       className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground disabled:opacity-50"
+                     >
+                       {mediaLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                       Test Devices
+                     </button>
+                   </div>
                  )}
 
                  {/* Status overlay */}
-                 {!mediaError && (
+                 {!mediaError && stream && (
                    <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center bg-black/60 backdrop-blur-md px-4 py-2 rounded-lg">
                       <div className="flex items-center gap-2 text-green-400 text-sm font-bold">
                          <div className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse shadow-[0_0_6px_rgba(74,222,128,0.8)]"></div>

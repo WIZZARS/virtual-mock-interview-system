@@ -14,6 +14,9 @@ interface InterviewScreenProps {
   isRecording: boolean;
   isProcessing: boolean;
   audioLevel: number;
+  questionTimeLeft: number | null;  // per-question countdown in seconds
+  questionTimeLimit: number;        // max seconds per question
+  totalQuestions: number;           // MAX_QUESTIONS from App.tsx
   onEndInterview: () => void;
   onStopRecording: () => void;
   onManualSubmit: (text: string) => void;
@@ -21,7 +24,8 @@ interface InterviewScreenProps {
 
 export const InterviewScreen: React.FC<InterviewScreenProps> = ({ 
   videoRef, transcript, liveFeedback, startTime, isSpeaking, isRecording, 
-  isProcessing, audioLevel, onEndInterview, onStopRecording, onManualSubmit 
+  isProcessing, audioLevel, questionTimeLeft, questionTimeLimit, totalQuestions,
+  onEndInterview, onStopRecording, onManualSubmit 
 }) => {
   const { track, difficulty } = useInterviewStore();
   const transcriptEndRef = useRef<HTMLDivElement>(null);
@@ -61,9 +65,9 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript]);
 
-  // Auto-scroll coaching tips to top when new tip arrives
+  // Scroll coaching panel to top when new tip arrives (newest tip is first in array)
   useEffect(() => {
-    coachingTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    coachingTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [liveFeedback]);
 
   const formatTime = (seconds: number) => {
@@ -81,6 +85,17 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
   };
 
   const questionNumber = transcript.filter(t => t.speaker === 'ai').length;
+
+  // Per-question timer color: green → yellow → red
+  const getTimerColor = () => {
+    if (questionTimeLeft === null || isSpeaking || isProcessing) return null;
+    const pct = questionTimeLeft / questionTimeLimit;
+    if (pct > 0.5) return 'text-green-400';
+    if (pct > 0.25) return 'text-yellow-400';
+    return 'text-red-400 animate-pulse';
+  };
+  const timerColor = getTimerColor();
+  const timerPct = questionTimeLeft !== null ? (questionTimeLeft / questionTimeLimit) * 100 : 0;
 
   // Generate audio level bars
   const generateBars = (count: number) => {
@@ -113,7 +128,7 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
           </div>
           {questionNumber > 0 && (
             <div className="text-xs text-muted-foreground font-medium px-2 py-0.5 bg-muted/50 rounded-md">
-              Q{questionNumber}/15
+              Q{questionNumber}/{totalQuestions}
             </div>
           )}
         </div>
@@ -159,7 +174,25 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
             )}
           </div>
 
-          {/* Timer */}
+          {/* Per-question countdown timer */}
+          {questionTimeLeft !== null && isRecording && (
+            <div className={`flex flex-col items-center gap-0.5`}>
+              <div className={`font-mono text-sm font-bold ${timerColor}`}>
+                {questionTimeLeft === 0 ? "Time's up!" : formatTime(questionTimeLeft)}
+              </div>
+              {/* Progress bar */}
+              <div className="w-16 h-1 bg-muted rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-1000 ${
+                    timerPct > 50 ? 'bg-green-400' : timerPct > 25 ? 'bg-yellow-400' : 'bg-red-400'
+                  }`}
+                  style={{ width: `${timerPct}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Total session Timer */}
           <div className="font-mono text-lg font-bold tracking-widest text-foreground flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5 text-muted-foreground" />
             {formatTime(elapsed)}
@@ -182,8 +215,8 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
             />
             
             {/* LIVE Badge */}
-            <div className="absolute top-4 left-4 bg-red-500/90 text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 backdrop-blur-md shadow-lg">
-              <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+            <div className="absolute top-4 left-4 bg-black/60 text-red-500 border border-red-500/30 px-2.5 py-1 rounded-md text-[10px] font-bold tracking-widest flex items-center gap-1.5 backdrop-blur-md">
+              <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></div>
               LIVE
             </div>
 
@@ -204,9 +237,9 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
                 <div className="flex items-end gap-0.5 h-10 justify-center">
                   {generateBars(32)}
                 </div>
-                <div className="bg-red-500/20 backdrop-blur-md px-5 py-2 rounded-full flex items-center gap-2 border border-red-500/30">
-                  <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></div>
-                  <span className="text-sm font-bold text-red-400">Recording — speak your answer</span>
+                <div className="bg-black/60 backdrop-blur-md px-4 py-1.5 rounded-md flex items-center gap-2 border border-red-500/30">
+                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                  <span className="text-xs font-bold text-red-400 uppercase tracking-widest">Recording</span>
                 </div>
               </div>
             )}
@@ -214,9 +247,9 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
             {/* Processing indicator */}
             {isProcessing && (
               <div className="absolute bottom-4 left-4 right-4 flex items-center justify-center">
-                <div className="bg-yellow-500/20 backdrop-blur-md px-5 py-2 rounded-full flex items-center gap-2 border border-yellow-500/30">
-                  <Loader2 className="w-4 h-4 text-yellow-400 animate-spin" />
-                  <span className="text-sm font-bold text-yellow-400">Transcribing your answer with AI...</span>
+                <div className="bg-black/60 backdrop-blur-md px-4 py-1.5 rounded-md flex items-center gap-2 border border-yellow-500/30">
+                  <Loader2 className="w-3.5 h-3.5 text-yellow-400 animate-spin" />
+                  <span className="text-xs font-bold text-yellow-400 uppercase tracking-widest">Processing</span>
                 </div>
               </div>
             )}
@@ -239,7 +272,7 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
                    <p className="text-xs font-medium text-center">AI is analyzing your posture, eye contact, expressions & body language...</p>
                 </div>
               ) : (
-                [...liveFeedback].reverse().map((tip, index) => {
+                liveFeedback.map((tip, index) => {
                   const iconMap: Record<FeedbackCategory, React.ReactNode> = {
                     eye_contact: <Eye className="w-3.5 h-3.5" />,
                     posture: <User className="w-3.5 h-3.5" />,
@@ -324,7 +357,7 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
          
          <div className="flex items-center gap-3">
            <span className="text-xs text-muted-foreground">
-             <span className="font-medium">{questionNumber}</span>/15 questions
+             <span className="font-medium">{questionNumber}</span>/{totalQuestions} questions
            </span>
          </div>
 
@@ -333,9 +366,9 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
            {isRecording && (
              <button 
                onClick={onStopRecording}
-               className="flex items-center gap-2 bg-red-500 text-white px-6 py-2.5 rounded-full font-bold text-sm hover:bg-red-600 transition-all shadow-lg shadow-red-500/30 animate-fadeIn"
+               className="flex items-center gap-2 bg-red-500 text-white px-6 py-2 rounded-md font-bold text-sm hover:bg-red-600 transition-colors"
              >
-               <Square className="w-4 h-4 fill-current" /> Submit Answer
+               <Square className="w-3.5 h-3.5 fill-current" /> Submit Answer
              </button>
            )}
            
@@ -399,7 +432,7 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
          ) : (
            <button 
              onClick={() => setShowEndConfirm(true)}
-             className="bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground px-4 py-2 rounded-full font-bold flex items-center gap-1.5 transition-all text-xs shrink-0"
+             className="bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground px-4 py-2 rounded-md font-bold flex items-center gap-1.5 transition-all text-xs shrink-0"
            >
               <PhoneOff className="w-3.5 h-3.5" /> End Interview
            </button>

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { groqChat, groqJsonChat, groqTranscribe } from './src/lib/groqApi';
+import { groqChat, groqJsonChat, groqTranscribe, groqFollowUpCheck, groqStarCheck } from './src/lib/groqApi';
 import { useNavigate } from 'react-router';
 import { InterviewState, TranscriptMessage } from './types';
 import { useInterviewStore } from './src/store/useInterviewStore';
@@ -38,7 +38,7 @@ function pcmBase64ToWavBlob(base64Pcm: string, sampleRate = 24000, channels = 1,
 // Groq API is used for all AI operations (see src/lib/groqApi.ts)
 
 export default function App() {
-  const { track, difficulty, jobDescription, resumeText } = useInterviewStore();
+  const { track, difficulty, jobDescription, resumeText, vagueMode } = useInterviewStore();
   const { user } = useAuthStore();
   const navigate = useNavigate();
 
@@ -58,11 +58,30 @@ export default function App() {
   const { isReady: isTrackerReady, analyzeVideoFrame, getFinalMetrics } = useVisionTracker(videoRef);
 
   const conversationHistory = useRef<string>("");
-  const questionCount = useRef(0);
+  const questionCount = useRef(0);           // real questions asked (excluding follow-ups)
+  const followUpCount = useRef(0);           // follow-ups used so far
+  const lastAIQuestion = useRef<string>(''); // tracks last question text for follow-up check
+  const isFollowUp = useRef(false);          // whether current question is a follow-up
   const MAX_QUESTIONS = 15;
+  const MAX_FOLLOW_UPS = 5;                  // cap follow-ups to avoid runaway sessions
   const isInterviewActive = useRef(false);
   const startTimeRef = useRef<number>(0);
   const startLockRef = useRef(false);
+
+  // For Behavioral STAR track: log which components were present/missing per answer
+  const starComponentLog = useRef<{ present: string[]; missing: string[] }[]>([]);
+
+  // Per-question countdown timer
+  const [questionTimeLeft, setQuestionTimeLeft] = useState<number | null>(null);
+  const questionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Question timer duration in seconds based on difficulty
+  const getQuestionTimeLimitSecs = () => {
+    const d = difficulty || 'Fresher';
+    if (d === 'Senior') return 90;
+    if (d === 'Mid-Level') return 150;
+    return 180; // Fresher gets 3 min
+  };
 
   // Recording refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -103,12 +122,43 @@ export default function App() {
     return () => clearInterval(interval);
   }, [interviewState, isTrackerReady, analyzeVideoFrame]);
 
+  // Clear question timer helper
+  const clearQuestionTimer = useCallback(() => {
+    if (questionTimerRef.current) {
+      clearInterval(questionTimerRef.current);
+      questionTimerRef.current = null;
+    }
+    setQuestionTimeLeft(null);
+  }, []);
+
+  // Start per-question countdown — auto-submits when it hits 0
+  const startQuestionTimer = useCallback(() => {
+    clearQuestionTimer();
+    const limit = getQuestionTimeLimitSecs();
+    setQuestionTimeLeft(limit);
+    questionTimerRef.current = setInterval(() => {
+      setQuestionTimeLeft(prev => {
+        if (prev === null || prev <= 1) {
+          clearInterval(questionTimerRef.current!);
+          questionTimerRef.current = null;
+          // Auto-submit recording when time expires
+          console.log('⏱️ Question timer expired — auto-submitting');
+          stopAndSubmitRecording();
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, [clearQuestionTimer, difficulty]);
+
   // ============================================================
   // CLEANUP
   // ============================================================
   const cleanup = useCallback(() => {
     isInterviewActive.current = false;
     startLockRef.current = false;
+    if (questionTimerRef.current) clearInterval(questionTimerRef.current);
+    setQuestionTimeLeft(null);
     
     // Stop recorder
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -183,6 +233,10 @@ export default function App() {
     setFinalReport('');
     conversationHistory.current = "";
     questionCount.current = 0;
+    followUpCount.current = 0;
+    lastAIQuestion.current = '';
+    isFollowUp.current = false;
+    starComponentLog.current = [];
     isInterviewActive.current = true;
     startTimeRef.current = Date.now();
 
@@ -251,20 +305,74 @@ export default function App() {
          ? `\nJob Description:\n${jobDescription.substring(0, 1500)}`
          : '';
 
-       const systemInstruction = `You are a professional ${track} interview coach conducting a mock interview, like the ones at Google, Meta, Amazon. You are a supportive but realistic mentor helping the candidate prepare.
+       // Persona & pacing adapted per track
+       const personaByTrack: Record<string, string> = {
+         'FAANG Technical': 'You are a senior engineer at Google or Meta. Focus on data structures, algorithms, Big-O analysis, and edge cases. Probe for depth and correctness.',
+         'System Design': 'You are a staff engineer. Ask about scalability, distributed systems, CAP theorem, and tradeoffs. Push the candidate to think beyond the happy path.',
+         'Startup Behavioral': 'You are the CTO of a fast-growing startup. Value ownership, pragmatism, and culture fit. Ask about real past situations using the STAR method.',
+         'Behavioral STAR': 'You are an experienced HR director. Focus entirely on behavioral questions using the STAR framework. Probe for specific examples, not generalities.',
+         'HR': 'You are a professional HR interviewer. Focus on culture fit, teamwork, communication, and motivational questions.',
+         'Technical': 'You are a senior software engineer. Ask technical problem-solving questions relevant to the role.',
+         'General': 'You are a professional interviewer. Ask a mix of behavioral, situational, and technical questions.',
+       };
+       const persona = personaByTrack[track || 'General'] || personaByTrack['General'];
+       const questionLabel = isFollowUp.current
+         ? `This is a follow-up to question ${questionCount.current} (do NOT increment the question count in your response).`
+         : `This is question ${questionCount.current + 1} of ${MAX_QUESTIONS}.`;
 
-Level: ${difficulty}.${jdContext}${resumeContext}
+       const vagueInstruction = vagueMode 
+         ? '\n\nAMBIGUITY TRAINING ENABLED: Intentionally ask questions that are under-specified or vague (e.g., "Design a scalable system" without giving constraints). Reward the candidate if they ask clarifying questions before answering.' 
+         : '';
 
+       let pacingStrategy = '';
+       if (track === 'System Design') {
+         pacingStrategy = `
 PACING:
-- Q1-3: Introductions, icebreakers.
-- Q4-8: Core technical/domain questions.
-- Q9-12: Deep dive scenarios.
-- Q13-15: Behavioral STAR questions, wrap-up.
+- Q1: Brief introduction.
+- Q2-Q15: PURE SYSTEM DESIGN. Ask them to architect large-scale systems (e.g., URL shortener, distributed cache, Netflix clone). Force them to discuss CAP theorem, DB choices, caching, and scalability. Do NOT ask basic resume questions.`;
+       } else if (track === 'FAANG Technical') {
+         pacingStrategy = `
+PACING:
+- Q1: Brief introduction.
+- Q2-Q15: PURE ALGORITHMS & DATA STRUCTURES. Ask LeetCode-style questions. Focus on time/space complexity (Big-O), trees, graphs, and dynamic programming. Do NOT ask basic resume questions.`;
+       } else if (track === 'Behavioral STAR') {
+         pacingStrategy = `
+PACING:
+- Q1: Brief introduction.
+- Q2-Q15: BEHAVIORAL QUESTIONS ONLY. Focus strictly on past experiences, conflicts, and leadership using the STAR method.`;
+       } else if (track === 'Startup Behavioral') {
+         pacingStrategy = `
+PACING:
+- Q1: Brief introduction.
+- Q2-Q15: STARTUP CULTURE FIT. Focus on extreme ownership, ambiguity, wearing multiple hats, and bias for action. Use their resume to ask how they'd handle high-pressure, fast-paced startup scenarios.`;
+       } else if (track === 'HR') {
+         pacingStrategy = `
+PACING:
+- Q1: Brief introduction.
+- Q2-Q15: HR & TEAMWORK. Focus on conflict resolution, communication style, long-term goals, and basic culture fit.`;
+       } else if (track === 'Technical') {
+         pacingStrategy = `
+PACING:
+- Q1: Brief introduction.
+- Q2-Q15: ROLE-SPECIFIC TECHNICAL QUESTIONS. Focus heavily on the exact programming languages and tools mentioned in their resume and the job description.`;
+       } else {
+         pacingStrategy = `
+PACING (for main questions, not follow-ups):
+- Q1-3: Introductions and warm-up based on resume.
+- Q4-8: Core domain questions.
+- Q9-12: Deep dive and scenarios.
+- Q13-15: Behavioral questions and wrap-up.`;
+       }
+
+       const systemInstruction = `You are a strict, professional interview coach conducting a realistic mock interview. ${persona}
+
+Level: ${difficulty}.${jdContext}${resumeContext}${vagueInstruction}
+${pacingStrategy}
 
 RULES:
-1. This is question ${questionCount.current + 1} of ${MAX_QUESTIONS}.
-2. After the candidate answers, give ONE sentence of coaching feedback, then ask the next question. Example: "That's a great answer, I liked how you structured it. Now let me ask..."
-3. Max 3 sentences. This is spoken conversation, keep it natural. No markdown, bullets, or emojis.
+1. ${questionLabel}
+2. After the candidate answers, give ONE sentence of strict coaching feedback. Do NOT blindly praise them. If their answer was under 15 words, vague, or evasive (like just saying "Yes"), explicitly call out that their answer was unacceptable and incomplete before asking the next question.
+3. Max 3 sentences total. This is spoken conversation — no markdown, bullets, or emojis.
 4. Use contractions naturally ("you'd", "that's", "let's").
 5. First message (no history): Introduce yourself warmly, ask them to tell you about themselves.
 6. At question ${MAX_QUESTIONS} after their answer, respond EXACTLY: "Interview complete. Generating your report."
@@ -281,7 +389,13 @@ RULES:
        ]);
 
        if (!responseText || !isInterviewActive.current) throw new Error('Empty response from Groq');
-       
+
+       // Track the AI's question text for follow-up evaluation
+       if (!isFollowUp.current) {
+         lastAIQuestion.current = responseText;
+       }
+       isFollowUp.current = false; // reset for next cycle
+
        conversationHistory.current += `\nInterviewer: ${responseText}`;
        speakThenRecord(responseText);
 
@@ -325,11 +439,17 @@ RULES:
     setIsSpeaking(true);
     setIsRecording(false);
     setIsProcessing(false);
+    clearQuestionTimer(); // stop timer while AI is speaking
 
     const afterSpeech = () => {
       if (!isInterviewActive.current) return;
       setIsSpeaking(false);
-      setTimeout(() => { if (isInterviewActive.current) startRecording(); }, 500);
+      setTimeout(() => {
+        if (isInterviewActive.current) {
+          startRecording();
+          startQuestionTimer(); // begin countdown once user starts their turn
+        }
+      }, 500);
     };
 
     // Update transcript immediately
@@ -376,7 +496,9 @@ RULES:
         audio: { 
           echoCancellation: true, 
           noiseSuppression: true,
-          autoGainControl: true 
+          autoGainControl: true,
+          sampleRate: 48000,   // highest quality supported by most browsers
+          channelCount: 1,     // mono — Whisper doesn't benefit from stereo
         } 
       });
       audioStreamRef.current = audioStream;
@@ -436,7 +558,7 @@ RULES:
         setAudioLevel(normalizedLevel);
 
         // Silence detection
-        const isSilent = average < 8; // Very low threshold
+        const isSilent = average < 10; // Lower threshold to prevent false positives for quiet mics
         
         if (!isSilent) {
           userHasSpoken = true;
@@ -445,9 +567,9 @@ RULES:
           // User was speaking but now is silent
           if (silenceStartRef.current === 0) {
             silenceStartRef.current = Date.now();
-          } else if (Date.now() - silenceStartRef.current > 5000) {
-            // 5 seconds of silence after speaking → auto-submit
-            console.log("🤫 5s silence detected, auto-submitting...");
+          } else if (Date.now() - silenceStartRef.current > 8000) {
+            // 8 seconds of silence after speaking → auto-submit
+            console.log("🤫 8s silence detected, auto-submitting...");
             stopAndSubmitRecording();
           }
         }
@@ -463,6 +585,15 @@ RULES:
   const stopAndSubmitRecording = useCallback(async () => {
     if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
 
+    // If the user has switched tabs, discard the audio — it likely captured ambient sound
+    if (document.hidden) {
+      console.warn('⚠️ Tab not visible at submit time — discarding audio');
+      try { mediaRecorderRef.current.stop(); } catch(e) {}
+      audioChunksRef.current = [];
+      setIsRecording(false);
+      setAudioLevel(0);
+      return;
+    }
     setIsRecording(false);
     setIsProcessing(true);
     setAudioLevel(0);
@@ -555,6 +686,69 @@ RULES:
       }
 
       setTranscript(prev => [...prev, { speaker: 'user', text: transcription }]);
+
+      // Capture and immediately reset the follow-up flag.
+      // If the user is answering a follow-up, we do NOT probe again — just move on.
+      const wasFollowUp = isFollowUp.current;
+      isFollowUp.current = false;
+
+      // ── Follow-up question logic ──────────────────────────────────────────
+      const canAskFollowUp =
+        !wasFollowUp &&                            // never chain follow-up on follow-up
+        lastAIQuestion.current.length > 10 &&
+        followUpCount.current < MAX_FOLLOW_UPS &&
+        questionCount.current < MAX_QUESTIONS;
+
+      if (canAskFollowUp) {
+        try {
+          const isStar = track === 'Behavioral STAR';
+
+          if (isStar) {
+            // ── STAR-aware follow-up ──────────────────────────────────────
+            const starResult = await groqStarCheck(lastAIQuestion.current, transcription);
+            console.log('⭐ STAR check:', starResult);
+
+            // Log components for this answer
+            starComponentLog.current.push({
+              present: starResult.presentComponents,
+              missing: starResult.missingComponents,
+            });
+
+            if (starResult.missingComponents.length > 0 && starResult.followUpQuestion) {
+              console.log('🔄 STAR follow-up:', starResult.followUpQuestion, '| Missing:', starResult.missingComponents);
+              followUpCount.current++;
+              isFollowUp.current = true;
+              conversationHistory.current += `\nCandidate: ${transcription}`;
+              conversationHistory.current += `\nInterviewer: ${starResult.followUpQuestion}`;
+              setIsProcessing(false);
+              speakThenRecord(starResult.followUpQuestion);
+              return;
+            }
+          } else {
+            // ── Generic follow-up ─────────────────────────────────────────
+            const followUpResult = await groqFollowUpCheck(
+              track || 'General',
+              difficulty || 'Fresher',
+              lastAIQuestion.current,
+              transcription
+            );
+            if (followUpResult.needsFollowUp && followUpResult.followUpQuestion) {
+              console.log('🔄 Follow-up triggered:', followUpResult.followUpQuestion);
+              followUpCount.current++;
+              isFollowUp.current = true;
+              conversationHistory.current += `\nCandidate: ${transcription}`;
+              conversationHistory.current += `\nInterviewer: ${followUpResult.followUpQuestion}`;
+              setIsProcessing(false);
+              speakThenRecord(followUpResult.followUpQuestion);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn('Follow-up check failed (non-fatal):', e);
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       setIsProcessing(false);
       await generateNextAIResponse(transcription);
 
@@ -603,34 +797,91 @@ RULES:
       const metrics = getFinalMetrics();
       const duration = Math.round((Date.now() - startTimeRef.current) / 1000);
       
-      const questionCount = finalTranscript.filter(t => t.speaker === 'ai').length;
+      const qCount = finalTranscript.filter(t => t.speaker === 'ai').length;
       const answerCount = finalTranscript.filter(t => t.speaker === 'user').length;
+      const followUpsUsed = followUpCount.current;
       
+      // Extract just the AI question turns for debrief
+      const aiQuestions = finalTranscript
+        .filter(t => t.speaker === 'ai')
+        .map(t => t.text)
+        .slice(0, 8);
+
+      // Build STAR-specific schema addition if applicable
+      const isStarTrack = track === 'Behavioral STAR';
+      const starLogSummary = isStarTrack && starComponentLog.current.length > 0
+        ? `\nSTAR Component Data (per answer): ${JSON.stringify(starComponentLog.current)}`
+        : '';
+
+      const starSchemaAddition = isStarTrack ? `,
+  "starStructureAnalysis": {
+    "situationScore": N,
+    "taskScore": N,
+    "actionScore": N,
+    "resultScore": N,
+    "overallStarScore": N,
+    "starFeedback": "Honest assessment of how well the candidate used STAR structure across all answers."
+  }` : '';
+
+      const vagueSchemaAddition = vagueMode ? `,
+  "ambiguityAnalysis": {
+    "clarificationScore": N,
+    "feedback": "Honest assessment of how well the candidate asked clarifying questions when presented with vague or under-specified scenarios."
+  }` : '';
+
+      const starScoringRules = isStarTrack ? `
+STAR SCORING RULES (only for Behavioral STAR track):
+- situationScore: How well they set context in their answers (0-10)
+- taskScore: How clearly they defined their personal responsibility (0-10)
+- actionScore: How specific and personal their actions were — penalize heavy "we" usage (0-10)
+- resultScore: How measurable/concrete their outcomes were (0-10)
+- overallStarScore: Average of the four, adjusted for consistency
+- Use the STAR Component Data above to inform these scores accurately
+${starLogSummary}` : ''; // limit debrief to first 8 questions
+
       const prompt = `You are a STRICT and HONEST interview coach. Generate a realistic performance report as JSON.
 
 CRITICAL RULES FOR SCORING:
-- If the interview lasted less than 2 minutes, ALL scores must be 2.0 or below (the candidate barely participated).
+- If the interview lasted less than 2 minutes, ALL scores must be 2.0 or below.
 - If the candidate answered fewer than 3 questions, scores should not exceed 4.0.
 - If answers are very short (1-2 words each), communication and confidence scores must be LOW (1-3).
 - Do NOT inflate scores. A 7+ score requires genuinely good, detailed answers.
-- Base scores ONLY on what actually happened in the transcript, not on assumptions.
+- Base scores ONLY on what actually happened in the transcript.
 - Eye contact and body language scores come from vision data — use them as-is.
-
+${starScoringRules}
 SESSION FACTS:
 - Duration: ${Math.floor(duration / 60)}m ${duration % 60}s
-- Questions asked by AI: ${questionCount}
+- Questions asked by AI: ${qCount} (including ${followUpsUsed} follow-up questions)
 - Answers given by candidate: ${answerCount}
 - Track: ${track} | Level: ${difficulty}
 - Vision Data: Eye Contact: ${metrics.eyeContactScore}/10, Posture: ${metrics.postureScore}/10
 
-JSON format (all scores 0.0-10.0):
+Generate JSON with EXACTLY this schema (all scores 0.0-10.0):
 {
-  "overallSummary": "Honest summary of what happened in this session...",
-  "scores": { "communication": N, "confidence": N, "bodyLanguage": ${metrics.postureScore}, "eyeContact": ${metrics.eyeContactScore}, "speakingPace": N, "overall": N },
-  "detailedAnalysis": { "communication": "...", "confidence": "...", "bodyLanguage": "...", "eyeContact": "...", "speakingPace": "..." },
+  "overallSummary": "Honest 2-3 sentence summary of the session.",
+  "scores": {
+    "communication": N, "confidence": N,
+    "bodyLanguage": ${metrics.postureScore}, "eyeContact": ${metrics.eyeContactScore},
+    "speakingPace": N, "overall": N
+  },
+  "detailedAnalysis": {
+    "communication": "...", "confidence": "...",
+    "bodyLanguage": "...", "eyeContact": "...", "speakingPace": "..."
+  },
   "strengths": ["...", "...", "..."],
-  "improvementTips": ["...", "...", "...", "...", "..."]
+  "improvementTips": ["...", "...", "...", "...", "..."],
+  "industryBenchmark": "Compare this candidate honestly to a typical ${difficulty}-level ${track} candidate at a top company. Be specific about where they stand.",
+  "questionDebrief": [
+    { "question": "...", "whyAsked": "...", "idealApproach": "..." }
+  ],
+  "nextSteps": [
+    { "action": "...", "resource": "..." },
+    { "action": "...", "resource": "..." },
+    { "action": "...", "resource": "..." }
+  ]${starSchemaAddition}${vagueSchemaAddition}
 }
+
+For questionDebrief, use these actual questions asked: ${JSON.stringify(aiQuestions)}
 
 Transcript:\n${transcriptText}`;
 
@@ -678,16 +929,13 @@ Transcript:\n${transcriptText}`;
         case 'starting':
             return (
                <div className="flex flex-col items-center justify-center min-h-screen bg-background">
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-breathe"></div>
-                    <svg className="animate-spin h-12 w-12 text-primary relative z-10" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  </div>
-                  <h2 className="text-2xl font-bold text-foreground mt-6 animate-fadeIn">Initializing AI Interview Coach...</h2>
-                  <p className="text-muted-foreground mt-2 animate-fadeIn">Setting up {difficulty} {track} session. Please allow camera + mic.</p>
-                  <p className="text-xs text-primary/60 mt-3 animate-fadeIn">{loadingMessage}</p>
+                  <svg className="animate-spin h-10 w-10 text-primary mb-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <h2 className="text-xl font-semibold tracking-tight text-foreground animate-fadeIn">Initializing AI Interview Coach...</h2>
+                  <p className="text-sm text-muted-foreground mt-2 animate-fadeIn">Setting up {difficulty} {track} session. Please allow camera + mic.</p>
+                  <p className="text-xs text-muted-foreground/60 mt-3 animate-fadeIn">{loadingMessage}</p>
                </div>
             );
         case 'in_progress':
@@ -700,6 +948,9 @@ Transcript:\n${transcriptText}`;
                 isRecording={isRecording}
                 isProcessing={isProcessing}
                 audioLevel={audioLevel}
+                questionTimeLeft={questionTimeLeft}
+                questionTimeLimit={getQuestionTimeLimitSecs()}
+                totalQuestions={MAX_QUESTIONS}
                 onEndInterview={endInterviewEarly}
                 onStopRecording={stopAndSubmitRecording}
                 onManualSubmit={handleManualSubmit}
@@ -707,15 +958,12 @@ Transcript:\n${transcriptText}`;
         case 'generating_report':
             return (
               <div className="flex flex-col items-center justify-center min-h-screen bg-background">
-                <div className="relative mb-8">
-                  <div className="absolute inset-0 bg-secondary/20 rounded-full blur-xl animate-breathe"></div>
-                  <svg className="animate-spin h-16 w-16 text-secondary relative z-10" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                </div>
-                <h2 className="text-3xl font-extrabold text-foreground animate-fadeInUp">Interview Complete! 🎉</h2>
-                <p className="text-lg text-muted-foreground mt-3">Analyzing your performance...</p>
+                <svg className="animate-spin h-10 w-10 text-primary mb-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <h2 className="text-xl font-semibold tracking-tight text-foreground animate-fadeInUp">Interview Complete.</h2>
+                <p className="text-sm text-muted-foreground mt-2">Analyzing your performance...</p>
               </div>
             );
         case 'report_ready':

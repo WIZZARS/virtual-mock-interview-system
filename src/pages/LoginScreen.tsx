@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router";
-import { supabase } from "../lib/supabase";
+import { useNavigate } from "react-router";
+import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { useAuthStore } from "../store/useAuthStore";
 import { Mail, Lock, ArrowRight } from "lucide-react";
 import { LogoWordmark, ThemeToggle } from "../components/Logo";
@@ -21,6 +21,11 @@ export default function LoginScreen() {
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSupabaseConfigured) {
+      setError("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.local.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -42,6 +47,11 @@ export default function LoginScreen() {
   };
 
   const handleGitHubAuth = async () => {
+    if (!isSupabaseConfigured) {
+      setError("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.local.");
+      return;
+    }
+
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
@@ -86,6 +96,12 @@ export default function LoginScreen() {
           </div>
         )}
 
+        {!isSupabaseConfigured && (
+          <div className="p-4 rounded-xl mb-6 text-sm font-medium bg-yellow-500/10 text-yellow-600 border border-yellow-500/20">
+            Login is disabled until Supabase environment variables are configured.
+          </div>
+        )}
+
         <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
           <div className="space-y-2">
             <label className="text-sm font-semibold ml-1">Email Address</label>
@@ -120,7 +136,7 @@ export default function LoginScreen() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !isSupabaseConfigured}
             className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 mt-4 hover:opacity-90 shadow-lg shadow-primary/20 transition-all disabled:opacity-50"
           >
             {loading ? "Processing..." : (isSignUp ? "Create Account" : "Sign In")}
@@ -128,24 +144,12 @@ export default function LoginScreen() {
           </button>
         </form>
 
-        <div className="relative flex items-center justify-center mb-6">
-          <div className="border-t border-border w-full absolute"></div>
-          <span className="bg-card px-4 text-xs font-semibold text-muted-foreground relative z-10">OR CONTINUE WITH</span>
-        </div>
-
-
-        <p className="text-center text-sm font-medium text-muted-foreground">
+        <p className="text-center text-sm font-medium text-muted-foreground mt-2">
           {isSignUp ? "Already have an account?" : "Don't have an account?"}
           <button onClick={() => setIsSignUp(!isSignUp)} className="ml-2 text-primary hover:underline font-bold">
             {isSignUp ? "Log In" : "Sign Up"}
           </button>
         </p>
-
-        <div className="mt-5 pt-5 border-t border-border/50">
-          <Link to="/setup" className="block text-center text-sm text-muted-foreground hover:text-primary transition-colors font-medium">
-            Skip login → Practice as guest
-          </Link>
-        </div>
 
       </div>
     </div>
