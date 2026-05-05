@@ -45,7 +45,14 @@ export default function MainRouter() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginScreen />} />
-        <Route path="/setup" element={<SetupScreen />} />
+        <Route 
+          path="/setup" 
+          element={
+            <ProtectedRoute>
+              <SetupScreen />
+            </ProtectedRoute>
+          } 
+        />
         
         {/* Protected Dashboard Route */}
         <Route 
@@ -57,8 +64,15 @@ export default function MainRouter() {
           } 
         />
         
-        {/* Interview Route — accessible without login for guest practice */}
-        <Route path="/interview" element={<InterviewApp />} />
+        {/* Interview Route */}
+        <Route 
+          path="/interview" 
+          element={
+            <ProtectedRoute>
+              <InterviewApp />
+            </ProtectedRoute>
+          } 
+        />
 
         {/* Catch-all redirect */}
         <Route path="*" element={<Navigate to="/" replace />} />

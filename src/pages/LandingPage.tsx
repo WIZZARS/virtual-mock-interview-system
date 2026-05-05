@@ -90,7 +90,7 @@ export default function LandingPage() {
               className="group relative flex items-center justify-center gap-2 bg-foreground text-background px-8 py-4 rounded-full text-lg font-bold shadow-xl shadow-foreground/10 hover:shadow-2xl hover:scale-[1.02] transition-all"
             >
               <PlayCircle className="w-5 h-5 group-hover:text-primary transition-colors" />
-              Start Free Practice
+              Start Practicing
               <ArrowRight className="w-5 h-5 opacity-0 -ml-2 group-hover:opacity-100 group-hover:ml-0 transition-all" />
             </Link>
             <Link 
@@ -161,7 +161,7 @@ export default function LandingPage() {
                   </div>
                 </div>
                 <div className="absolute -top-3 -right-3 bg-foreground text-background px-3 py-1.5 rounded-md text-xs font-bold shadow-lg">
-                  Free to use
+                  Interactive AI
                 </div>
               </div>
             </div>
@@ -172,7 +172,7 @@ export default function LandingPage() {
         <div ref={featuresRef} id="features" className="w-full scroll-mt-24">
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-extrabold text-foreground">Why InterviewIQ?</h2>
-            <p className="text-muted-foreground mt-4 text-lg">Professional interview coaching tools — available for free.</p>
+            <p className="text-muted-foreground mt-4 text-lg">Professional interview coaching tools — available anytime.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 stagger-children">
