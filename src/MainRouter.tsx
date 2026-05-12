@@ -7,6 +7,8 @@ import SetupScreen from "./pages/SetupScreen";
 import Dashboard from "./pages/Dashboard";
 import LoginScreen from "./pages/LoginScreen";
 import InterviewApp from "../App";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsOfService from "./pages/TermsOfService";
 import { useAuthStore } from "./store/useAuthStore";
 import { useThemeStore } from "./store/useThemeStore";
 
@@ -44,6 +46,8 @@ export default function MainRouter() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/terms" element={<TermsOfService />} />
         <Route path="/login" element={<LoginScreen />} />
         <Route 
           path="/setup" 

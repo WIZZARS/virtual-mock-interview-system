@@ -211,7 +211,11 @@ export default function LandingPage() {
       </main>
       
       <footer className="border-t border-border/40 py-8 text-center text-muted-foreground bg-background">
-        <p className="text-sm">© 2026 InterviewIQ. Built for students and job seekers. <span className="text-primary font-medium">Practice → Improve → Ace it.</span></p>
+        <p className="text-sm mb-4">© 2026 InterviewIQ. Built for students and job seekers. <span className="text-primary font-medium">Practice → Improve → Ace it.</span></p>
+        <div className="flex justify-center gap-6 text-sm">
+          <Link to="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
+          <Link to="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>
+        </div>
       </footer>
     </div>
   )

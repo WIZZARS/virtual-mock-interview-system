@@ -38,7 +38,7 @@ function pcmBase64ToWavBlob(base64Pcm: string, sampleRate = 24000, channels = 1,
 // Groq API is used for all AI operations (see src/lib/groqApi.ts)
 
 export default function App() {
-  const { track, difficulty, jobDescription, resumeText, vagueMode } = useInterviewStore();
+  const { track, difficulty, jobDescription, resumeText, vagueMode, codeContent, codeLanguage } = useInterviewStore();
   const { user } = useAuthStore();
   const navigate = useNavigate();
 
@@ -304,6 +304,11 @@ export default function App() {
        const jdContext = jobDescription 
          ? `\nJob Description:\n${jobDescription.substring(0, 1500)}`
          : '';
+       
+       const isTechnical = ['Technical', 'FAANG Technical', 'System Design'].includes(track || '');
+       const codeContext = isTechnical && codeContent && codeContent.trim() !== '// Start coding here...'
+         ? `\nCandidate's Current Code in Editor:\n\`\`\`${codeLanguage}\n${codeContent}\n\`\`\``
+         : '';
 
        // Persona & pacing adapted per track
        const personaByTrack: Record<string, string> = {
@@ -366,7 +371,7 @@ PACING (for main questions, not follow-ups):
 
        const systemInstruction = `You are a strict, professional interview coach conducting a realistic mock interview. ${persona}
 
-Level: ${difficulty}.${jdContext}${resumeContext}${vagueInstruction}
+Level: ${difficulty}.${jdContext}${resumeContext}${vagueInstruction}${codeContext}
 ${pacingStrategy}
 
 RULES:

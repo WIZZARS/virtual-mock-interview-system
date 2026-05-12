@@ -3,7 +3,8 @@ import { TranscriptMessage } from '../types';
 import { useInterviewStore } from '../src/store/useInterviewStore';
 import { CoachingTip, FeedbackCategory } from '../src/hooks/useVisionTracker';
 import { ThemeToggle } from '../src/components/Logo';
-import { Mic, MicOff, Eye, BadgeInfo, PhoneOff, Cpu, Volume2, Clock, Send, Keyboard, Square, Loader2, User, Smile, Move, ZoomIn, CircleAlert, CheckCircle2, Sparkles } from 'lucide-react';
+import { Mic, MicOff, Eye, BadgeInfo, PhoneOff, Cpu, Volume2, Clock, Send, Keyboard, Square, Loader2, User, Smile, Move, ZoomIn, CircleAlert, CheckCircle2, Sparkles, Code2 } from 'lucide-react';
+import Editor from '@monaco-editor/react';
 
 interface InterviewScreenProps {
   videoRef: React.RefObject<HTMLVideoElement>;
@@ -27,15 +28,19 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
   isProcessing, audioLevel, questionTimeLeft, questionTimeLimit, totalQuestions,
   onEndInterview, onStopRecording, onManualSubmit 
 }) => {
-  const { track, difficulty } = useInterviewStore();
+  const { track, difficulty, codeContent, setCodeContent, codeLanguage, setCodeLanguage } = useInterviewStore();
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const coachingTopRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  const isTechnical = ['Technical', 'FAANG Technical', 'System Design'].includes(track || '');
   const [elapsed, setElapsed] = useState(0);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [manualText, setManualText] = useState('');
   const [showTextInput, setShowTextInput] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [showEditor, setShowEditor] = useState(false);
+  const hasAutoOpened = useRef(false);
 
   // Live timer
   useEffect(() => {
@@ -86,6 +91,13 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
 
   const questionNumber = transcript.filter(t => t.speaker === 'ai').length;
 
+  useEffect(() => {
+    if (isTechnical && questionNumber >= 2 && !hasAutoOpened.current) {
+      setShowEditor(true);
+      hasAutoOpened.current = true;
+    }
+  }, [questionNumber, isTechnical]);
+
   // Per-question timer color: green → yellow → red
   const getTimerColor = () => {
     if (questionTimeLeft === null || isSpeaking || isProcessing) return null;
@@ -134,6 +146,15 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
         </div>
         
         <div className="flex items-center gap-3">
+          {isTechnical && (
+            <button 
+              onClick={() => setShowEditor(!showEditor)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${showEditor ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'}`}
+            >
+              <Code2 className="w-3.5 h-3.5" />
+              {showEditor ? 'Hide Editor' : 'Show Editor'}
+            </button>
+          )}
           <ThemeToggle />
           {/* Status Badge */}
           <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all duration-300 ${
@@ -201,10 +222,10 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col lg:flex-row gap-3 p-3 md:p-4 min-h-0">
+      <main className="flex-1 flex flex-col lg:flex-row gap-3 p-3 md:p-4 min-h-0 overflow-y-auto lg:overflow-hidden">
         
         {/* Left: Camera */}
-        <div className="w-full lg:w-1/2 flex flex-col gap-3">
+        <div className={`w-full ${isTechnical && showEditor ? 'lg:w-1/4 h-[400px] lg:h-auto' : 'lg:w-1/2'} flex flex-col gap-3 shrink-0 transition-all duration-300`}>
           <div className="flex-1 bg-black rounded-2xl overflow-hidden relative shadow-2xl border border-border">
             <video 
                ref={videoRef} 
@@ -256,8 +277,47 @@ export const InterviewScreen: React.FC<InterviewScreenProps> = ({
           </div>
         </div>
 
+        {/* Middle: Code Editor */}
+        {isTechnical && showEditor && (
+          <div className="w-full lg:w-1/2 flex flex-col gap-3 min-h-[400px] lg:h-full shrink-0">
+            <div className="flex-1 bg-[#1e1e1e] border border-border rounded-2xl overflow-hidden shadow-xl flex flex-col">
+              <div className="h-10 bg-[#252526] flex items-center px-4 border-b border-[#3c3c3c] gap-3 shrink-0">
+                 <Code2 className="w-4 h-4 text-blue-400" />
+                 <select 
+                    value={codeLanguage} 
+                    onChange={(e) => setCodeLanguage(e.target.value)}
+                    className="bg-[#3c3c3c] text-xs text-gray-300 font-mono px-2 py-1 rounded outline-none border border-[#4a4a4a] focus:border-blue-400 transition-colors"
+                 >
+                    <option value="javascript">JavaScript</option>
+                    <option value="python">Python</option>
+                    <option value="java">Java</option>
+                    <option value="cpp">C++</option>
+                    <option value="typescript">TypeScript</option>
+                    <option value="sql">SQL</option>
+                 </select>
+                 <span className="text-[10px] text-gray-500 ml-auto hidden sm:block">AI can see your code</span>
+              </div>
+              <div className="flex-1 relative">
+                <Editor
+                  height="100%"
+                  language={codeLanguage}
+                  theme="vs-dark"
+                  value={codeContent}
+                  onChange={(val) => setCodeContent(val || '')}
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 14,
+                    wordWrap: 'on',
+                    padding: { top: 16 },
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Right: Feedback & Transcript */}
-        <div className="w-full lg:w-1/2 flex flex-col gap-3 min-h-0">
+        <div className={`w-full ${isTechnical && showEditor ? 'lg:w-1/4' : 'lg:w-1/2'} flex flex-col gap-3 min-h-0 shrink-0 transition-all duration-300`}>
           
           {/* Live Coaching */}
           <div className="shrink-0 h-[28%] bg-card border border-border rounded-2xl p-4 shadow-sm flex flex-col min-h-[150px]">
